@@ -78,6 +78,9 @@ metadata:
 
 ### Step 0 — 前置核对
 
+> **失败分支**：`import bioxtasraw` 报 `ImportError: sascalc_exts` → 你站在 RAW 源码目录里，换目录跑（见下面第 13 条）；
+> `.cfg` 与当天下机配置对不上（定心/距离/掩膜任一不同）→ 先按 `configure-bioxtas-raw-for-a-dataset` 核对，**别带着错配置积分**（不报错但整批数据作废）。
+
 - 用**装了 RAW 的 python**（本机 `/Applications/BioXTASRAW/bin/python`），且**不要站在 RAW 源码目录里**跑
   （源码树会遮蔽 site-packages 里编译好的 `sascalc_exts`，直接 ImportError）。
 - 核对该会话的 `.cfg`（定心/距离/掩膜/标样）→ `configure-bioxtas-raw-for-a-dataset`。
@@ -395,6 +398,28 @@ python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> -
 
 **什么时候别用它**：峰窗只有几帧（切片凑不出 ≥2 个可用）；洗脱事件只抬高几个百分点（浓度梯度太小，
 c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，别把混合物的"浓度依赖"当相互作用）。
+
+## 出问题时怎么办（if-then 三段式；全部来自实测）
+
+> **扫描方式**：先在日志/产物里找"这一行"，再看一线修复；一线没解决才用兜底。
+> 兜底是**允许交付的下限**——必须在 README 的"没做的/不能信的"一节写明做了哪个兜底。
+
+| # | 触发条件（日志/产物里的原话或现象） | 一线修复 | 仍失败时的兜底（并写进 README） |
+|---|---|---|---|
+| 1 | `NoATSASError` / `models/` 里没有 `*_dammif_*` | `--atsas-dir` 指到 **ATSAS 安装根的 `bin` 这一级**（RAW 用父目录反推 `ATSAS` 变量） | 只出 DENSS 电子云（`--model-engine denss`），README 写明"珠模未做（缺 ATSAS）"；ATSAS 装好后单跑一次 `dammif` 验 license |
+| 2 | 逐峰 `tables/frame_params.csv` 的 rg/i0 整列 `-1` | `--frame-flag-q "0.01,0.05"`（默认已开；确认没被 `none` 覆盖） | 先看图量色谱信噪（`series/sec_peaks.png`）；仍全 -1 → 只用**区间拟合值**（`tables/guinier_multi_range.csv`），README 标"逐帧参数不可用" |
+| 3 | DENSS：`index -1 is out of bounds … labeled_support == feature` / `failed to run properly` | 裁 q 到 qRg_min ≈ 0.4–0.5（`--trim-qmin`）或 `--ift-dmax ≈ 3×Rg` | 跳过 DENSS，用 DAMMIF 珠模 + IFT（GNOM/BIFT）当形状证据，README 标"无电子云" |
+| 4 | IFT 的 Dmax 离谱（≳ 3×Rg 的几倍）/ BIFT 给几百 Å | `--trim-qmin` 裁掉被寄生散射污染的低 q 段 | 显式 `--ift-dmax`（经验起手 3×Guinier Rg），README 标"Dmax 为人工给定" |
+| 5 | `find_buffer_range` / `find_sample_range` 返回 `success=False`、区间为 `None` | 手工 `--buffer-range "s,e[;s,e]"` / `--sample-range s,e`（**0 基**帧号） | 多峰时改用 `--peak-buffers`（每峰自己的前后两段）逐峰给；仍不行 → 该系列只能出峰检测产物 |
+| 6 | `IndexError: list index out of range`（`SECM.averageFrames` 里） | 帧区间 `end` 收到 `n−1`（脚本已自动 clip，核对日志告警） | 核对是否误用了 1 基帧号；把区间打印出来与色谱图对的峰位置比一遍 |
+| 7 | `damaver`：`FileNotFoundError: <prefix>-damaver-distances.txt` | 模型名与 `model_format` 必须一致（dammif 写 `<prefix>-1.cif`），且 damaver **只吃文件名、不吃路径** | 跳过 DAMAVER：交付单个最好的 DAMMIF 模型 + 用 `evaluate-a-shape-reconstruction` 自查 NSD 与聚类 |
+| 8 | 两峰之间**谷底没回基线**（谷底/峰高 ≥ 0.5） | 不在本管线里硬切区间 | 转 `deconvolve-overlapping-elution-peaks`（SVD/EFA/REGALS）；本管线只报"未解析重叠" |
+| 9 | 峰内梯度判定 🔴 不可判（可用切片 < 2） | `--gradient-slices` 调大 / `--gradient-min-conc` 放宽 / 换 `--gradient-mode height` | 结论写"数据不支持浓度依赖判断"（不要拿 1 个切片下结论） |
+| 10 | matplotlib：`Data has no positive values, and therefore cannot be log-scaled` | 正常信号：该峰窗内扣减后曲线全为负（**扣减过头**） | `--trim-qmax` 裁高 q + 换 buffer 区间重跑；README 标"该峰扣减过头、高 q 已截" |
+| 11 | 无束流帧被当成峰（`series/sec_peaks.png` 上黑线处出现窄峰） | 认峰已按总强度 < 0.5×中位剔除（`det.mask`） | `--peak-min-snr` 调大 + `--peak-min-width` 调大，并人工看图确认后再引用峰表 |
+| 12 | 线站既没给逐帧 txt、也没有 `.Iochamber`/`.log` | `--no-header-normalization` 跑（`ImageHdrFormat=None`），视频省 `--norm-csv` | README **必须**写明"本系列未做通量归一化"；不要用未归一的 I(0) 做跨帧比较 |
+| 13 | RAW 报 `ImportError: bioxtasraw.sascalc_exts` | 换目录跑（别站在 RAW 源码树里） | 或在源码树里 `python setup.py build_ext --inplace` 后再跑 |
+| 14 | 脚本被并发编辑、跑到一半 `ValueError/NameError` | `git log -1` 记 revision → `cp` 到 scratch 冻结快照再跑 | 报告里写明用的 sha，并用**冻结的那份**重跑一遍 |
 
 ## 复核点（跑完先看这几处，再看数字）
 
