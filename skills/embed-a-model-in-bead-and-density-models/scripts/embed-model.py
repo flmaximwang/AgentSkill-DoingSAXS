@@ -71,6 +71,28 @@ def atsas_root(atsas_dir):
     return os.path.dirname(p) if os.path.basename(p) == "bin" else p
 
 
+def rank_bead_models(paths):
+    """DAMAVER 的产物分几类，取用顺序有讲究：global-damfilt（滤过平均 = 最可能模型）> cluster001-damfilt
+    > 其它 damfilt > global-damaver > cluster 的代表模型（`*_dammif_0N-1r.cif`，它是**单个**拟合模型，
+    不是共识）。按字母序排会把 `..._damaver-cluster001-..._dammif_02-1r.cif` 排到
+    `..._damaver-global-damfilt.cif` 前面，于是每次都拿到"某一个模型的叠合结果"。"""
+    def key(p):
+        b = os.path.basename(p)
+        if "global-damfilt" in b:
+            return (0, b)
+        if "cluster001-damfilt" in b:
+            return (1, b)
+        if "damfilt" in b:
+            return (2, b)
+        if "global-damaver" in b:
+            return (3, b)
+        if "-1r" in b:
+            return (5, b)
+        return (4, b)
+
+    return sorted(paths, key=key)
+
+
 # --------------------------------------------------------------- sample metadata
 def read_sample_meta(sample_dir):
     """Pull the IFT / P(r) values the upstream pipeline decided on.
@@ -94,6 +116,35 @@ def read_sample_meta(sample_dir):
             continue
         runs, chosen_tag, meta["source"] = r, blk.get("chosen"), cand
         break
+    if not runs:
+        # SEC 流水线不写 ift_summary.json，只写 tables/ift_summary.csv（method,dmax,rg,chi_sq…）
+        # 与 series/ranges.json（区间是否成功）。不认这两份，SEC 样品会被误判成"IFT 不可信"。
+        csvp = os.path.join(sample_dir, "tables", "ift_summary.csv")
+        if os.path.exists(csvp):
+            import csv as _csv
+            def num(v):
+                try:
+                    f = float(v)
+                    return f if f == f else None      # NaN -> None
+                except (TypeError, ValueError):
+                    return None
+            rows = []
+            for r in _csv.DictReader(open(csvp)):
+                rows.append(dict(tag=(r.get("method") or "").strip(), dmax=num(r.get("dmax")),
+                                 dmax_err=num(r.get("dmax_err")), rg_realspace=num(r.get("rg")),
+                                 rg_err=num(r.get("rg_err")), chi_sq=num(r.get("chi_sq"))))
+            if rows:
+                runs = rows
+                chosen_tag = next((r["tag"] for r in rows if r["tag"].upper() == "GNOM"),
+                                  rows[-1]["tag"])
+                meta["source"] = "tables/ift_summary.csv"
+                rj = os.path.join(sample_dir, "series", "ranges.json")
+                trusted = None
+                if os.path.exists(rj):
+                    rr = json.load(open(rj))
+                    trusted = bool(rr.get("buffer_range_success", True)) and \
+                        bool(rr.get("sample_range_success", True))
+                meta["trusted_from_ranges"] = trusted
     meta["runs"] = runs or []
     if runs:
         chosen = next((r for r in runs if r.get("tag") == chosen_tag and r.get("trusted")), None)
@@ -105,6 +156,9 @@ def read_sample_meta(sample_dir):
         meta.update(dmax=g("dmax", "Dmax"), rg=g("rg_realspace", "Rg_realspace"),
                     qmin=g("qmin"), qmax=g("qmax"), idx_min=g("idx_min"),
                     trusted=bool(chosen.get("trusted")), tag=chosen.get("tag"))
+        if meta.get("trusted_from_ranges") is not None:
+            # SEC 流水线：行里没有 trusted 字段，区间是否成功记在 series/ranges.json
+            meta["trusted"] = bool(meta["trusted_from_ranges"])
     meta["dat"] = os.path.join(sample_dir, "profiles", "03_subtracted", "subtracted.dat")
     meta["density_map"] = None
     # 密度图命名有两套：管式流水线写 models/denss.mrc；SEC 流水线写 models/<前缀>_denss.mrc。
@@ -119,10 +173,10 @@ def read_sample_meta(sample_dir):
         if os.path.exists(os.path.join(sample_dir, cand)):
             meta["density_map"] = os.path.join(sample_dir, cand)
             break
-    meta["existing_bead_models"] = sorted(
+    meta["existing_bead_models"] = rank_bead_models(sorted(set(
         glob.glob(os.path.join(sample_dir, "models", "*damfilt*"))
         + glob.glob(os.path.join(sample_dir, "models", "*damaver*"))
-        + glob.glob(os.path.join(sample_dir, "models", "*bead*")))
+        + glob.glob(os.path.join(sample_dir, "models", "*bead*")))))
     return meta
 
 
@@ -308,9 +362,87 @@ def align_to_beads(bead_model, model, out_dir, stem, args):
 
 
 # --------------------------------------------------------------- density branch
-def ca_coords(pdb):
+def _split_cif_row(line):
+    out, cur, q = [], "", None
+    for ch in line:
+        if q:
+            if ch == q:
+                q = None
+            else:
+                cur += ch
+        elif ch in "'\"":
+            q = ch
+        elif ch.isspace():
+            if cur:
+                out.append(cur)
+                cur = ""
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _ca_coords_cif(path):
+    """mmCIF 的 CA 坐标。环境里没有 Biopython（RAW/ATSAS 的 python 都没有），所以自己扫
+    `_atom_site` 那个 loop_：按列名定位 label_atom_id / group_PDB / Cartn_x,y,z。"""
+    lines = open(path, errors="ignore").read().splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() != "loop_":
+            i += 1
+            continue
+        j, hdr = i + 1, []
+        while j < len(lines) and lines[j].strip().startswith("_atom_site."):
+            hdr.append(lines[j].strip()[len("_atom_site."):].split()[0])
+            j += 1
+        if not hdr:
+            i += 1
+            continue
+        rows, k = [], j
+        while k < len(lines):
+            s = lines[k].strip()
+            if not s or s.startswith("#") or s.startswith("loop_") or s.startswith("_"):
+                break
+            rows.append(s)
+            k += 1
+        i = k if k > j else i + 1
+
+        def col(*names):
+            for nm in names:
+                if nm in hdr:
+                    return hdr.index(nm)
+            return None
+
+        ia = col("label_atom_id", "auth_atom_id")
+        ig = col("group_PDB")
+        ix, iy, iz = col("Cartn_x"), col("Cartn_y"), col("Cartn_z")
+        if ia is None or ix is None or iy is None or iz is None:
+            continue
+        want = max(ia, ix, iy, iz)
+        out = []
+        for r in rows:
+            p = _split_cif_row(r)
+            if len(p) <= want or p[ia] != "CA":
+                continue
+            if ig is not None and len(p) > ig and p[ig] != "ATOM":
+                continue
+            try:
+                out.append([float(p[ix]), float(p[iy]), float(p[iz])])
+            except ValueError:
+                pass
+        if out:
+            return np.array(out)
+    return np.array([])
+
+
+def ca_coords(model):
+    """CA 坐标，PDB 与 mmCIF 都认（ATSAS >= 4 的珠模型/输出是 .cif，只按 PDB 解析会得到空数组，
+    几何复核和姿态散布就都变成 '?'）。"""
+    if str(model).lower().endswith((".cif", ".mmcif")):
+        return _ca_coords_cif(model)
     out = []
-    for line in open(pdb):
+    for line in open(model):
         if line.startswith("ATOM") and line[12:16].strip() == "CA":
             out.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
     return np.array(out)
@@ -476,7 +608,14 @@ def main():
     args = ap.parse_args()
 
     sample_dir = os.path.abspath(os.path.expanduser(args.sample_dir))
-    out = os.path.abspath(os.path.expanduser(args.out_dir or os.path.join(sample_dir, "embed")))
+    if args.out_dir:
+        out = os.path.abspath(os.path.expanduser(args.out_dir))
+    else:
+        # 默认放**样品目录的同级** _embed/<样品>/（SKILL.md 的交付物口径）：样品目录会被上游
+        # 流水线重跑清空，放 <样品>/embed/ 的产物下一次重跑就没了。
+        sib = os.path.dirname(sample_dir.rstrip("/"))
+        out = os.path.join(sib, "_embed", os.path.basename(sample_dir.rstrip("/")))
+    out = os.path.abspath(out)
     os.makedirs(out, exist_ok=True)
     model = os.path.abspath(os.path.expanduser(args.model))
     if not os.path.exists(model):
@@ -500,9 +639,9 @@ def main():
     if not args.skip_bead:
         try:
             bead_dir = os.path.join(out, "bead")
-            cached = [] if args.rebuild_bead else sorted(
-                glob.glob(os.path.join(bead_dir, "*global-damfilt*"))
-                + glob.glob(os.path.join(bead_dir, "*damaver*damfilt*")))
+            cached = [] if args.rebuild_bead else rank_bead_models(
+                glob.glob(os.path.join(bead_dir, "*damfilt*"))
+                + glob.glob(os.path.join(bead_dir, "*damaver*")))
             if args.bead_model:
                 bead, binfo = args.bead_model, {"bead_model": args.bead_model, "reused": True}
             elif cached:
