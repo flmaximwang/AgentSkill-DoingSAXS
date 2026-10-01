@@ -175,7 +175,7 @@ save <out.pdb> models #2
 
 ---
 
-## 6. 出图：PyMOL（ChimeraX 无头模式渲染不了）
+## 6. 出图与 `.pse`：PyMOL（ChimeraX 无头模式渲染不了）
 
 ChimeraX `--nogui --script x.cxc` 里 `save out.png` 会抛
 `LimitationError: Unable to save images because OpenGL rendering is not available`
@@ -183,16 +183,49 @@ ChimeraX `--nogui --script x.cxc` 里 `save out.png` 会抛
 
 ```bash
 env -u PYTHONPATH /Applications/PyMOL.app/Contents/bin/python3.10 render-embed-figure.py \
-    <fitted.pdb> <bead.cif|denss.mrc> <out.png> <beads|density> [sphere_scale|iso_level]
+    <fitted.pdb> <bead.cif|denss.mrc> <out.png> <beads|density> [选项]
+# 选项（默认值即交付口径）：--overlay-transparency 0.9|0.7  --level auto  --smooth auto
+#   --bead-radius <auto=CIF 头里的半径>  --transparency-mode 1  --sample-color yellow
+#   --overlay-color white  --frame-margin 1.1  --size 1200  --pse <路径> | --no-pse
 ```
+
+**样式是交付口径，不是审美偏好**：`sample` 黄色 cartoon、`beads`/`density` 半透明**白色**；
+每张 png 旁边必须有一个同名 `.pse`（`cmd.save()`），打开就是同一张图。
 
 - 必须 `pymol.finish_launching(['pymol','-cq'])`（本机 CLI 二进制被 `biorazer_pymol` 挡着；会打印一条
   `ModuleNotFoundError: No module named 'biorazer_pymol'`，无害）。
 - 对象名**不能用 `model`**（PyMOL 保留字，会被改名成 `model_`，后续选择器全部失效）。
-- 珠球要 `cmd.set('transparency', …)` 或减小 `sphere_scale`，否则把蛋白全遮住。
-- DENSS 图的等值面级别：A5 批的 `.mrc` 最大 ~0.58、均值 ~0.0015，`level 0.02` 对应约 0.54% 的格点
-  （＝实际包络范围，不是整个盒子）。
+- **珠球透明度有两个前置条件**（实测，2026-10-01，`sphere_transparency 0.8` 与全不透明渲染逐像素比）：
+  1. 珠子认的是 `sphere_transparency`（`transparency` 只管 surface，老脚本对珠球设 `transparency` 等于没设）；
+  2. 还要把 `transparency_mode` 从 PyMOL 默认的 **2** 改成 **1**——mode 2 在 ray trace 里把珠球透明度吃掉：
+
+     | transparency_mode | 与不透明渲染的平均像素差 | 结论 |
+     |---|---|---|
+     | 2（默认） | **2.8 / 255** | 看着不透 |
+     | 0 / 1 / 3 | **8.4 / 255** | 真的透了 |
+
+  脚本现取 `--transparency-mode 1`。
+- **珠球半径用模型自己的值**：`.cif` 头里的 `_atsas_dummy_atom_model.value`（本批 2.2 / 2.3 Å），
+  实测 `sphere_scale` 0.5 的 vdW 画法会让珠子沿 4.4 Å 晶格互相吞并成米粒状（视觉上像另一种重建）。
+- **透明度的实际观感**（同一张 A5-05-1 电子云图，测\"黄色像素占比 / 黄色像素的 R−B 均值\"）：
+
+  | 等值面 transparency | 0.35 | 0.45 | 0.65 | 0.75 | 0.85 |
+  |---|---|---|---|---|---|
+  | 黄色像素占比 | 15.4% | 16.3% | 17.0% | 16.8% | 16.4% |
+  | 黄色像素 R−B | 69.7 | 87.3 | **123.0** | 143.2 | 164.3 |
+
+  → 包络越透，样品越饱和；取 **0.7** 时白包络仍清楚可读、黄色已经饱和（0.55 时偏灰）。
+- **DENSS 等值面**：A5 批的 `.mrc` 最大 ~0.58、均值 ~0.0015、体素 **6.8 Å**（32³ / 218 Å 盒子）。
+  - 直接按 6.8 Å 体素渲会出现大片平面刻面；出图前用 `--smooth auto`（= 一个体素的 Gaussian）再求等值面。
+  - **平滑后必须重解 level**：同一个 level 0.02 在平滑图上包围体积会涨到 **279%**；正确口径是让包围体积
+    回到 `denss.log` 的 `Final Support Volume`（本次 56392 Å³），实测 level 0.09539 → 56077 Å³ = **99.4%**。
+  - 该体积由 `mrcmap.py` 直接从 `.mrc` 数格点算出（`volume_above`），不是估计值。
+- **框架**：珠球面板用 `zoom(sample or beads, 5 Å)` + `--frame-margin 1.1` 的拉远；电子云面板不能用
+  `zoom()`（**surface 对象不是原子选择，PyMOL 会报 `Invalid selection name`**），改用 `orient()` + 同一个拉远。
 - **两个靶子两张图**：珠模型与 DENSS 图各自居中在各自原点，相对取向无约束；混画会得到"模型戳出珠球"的假象。
+- 补 `.pse` 不必重跑科学步骤：`embed-model.py <样品> --out-dir <结果目录> --figures-only`
+  （读现成 `embed_results.json`，只重渲两个面板，几秒一个样品）。
+
 
 ---
 

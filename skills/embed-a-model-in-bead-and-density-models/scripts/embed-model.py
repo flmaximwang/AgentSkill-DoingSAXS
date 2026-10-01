@@ -28,8 +28,9 @@ Run with RAW's own interpreter (pyFAI/numba/matplotlib present):
 
 Outputs (in --out-dir): bead/ (GNOM .out, DAMMIF models, DAMAVER consensus),
 <stem>_in_beads.pdb + _in_beads.cif, <stem>_in_density_r<res>.pdb, fitmap_r*.csv,
-cifsup_*.log, embed_results.json, and two PyMOL panels (one per frame):
-<stem>_in_beads.png + <stem>_in_density.png
+cifsup_*.log, embed_results.json, and two PyMOL panels (one per frame), each as
+<stem>_in_beads.png + <stem>_in_beads.pse and <stem>_in_density.png + _in_density.pse
+(the .pse is the deliverable session: sample = yellow cartoon, envelope = translucent white).
 """
 from __future__ import annotations
 
@@ -57,6 +58,13 @@ def log(*a):
 def jdump(obj, path):
     with open(path, "w") as fh:
         json.dump(obj, fh, indent=1, default=str)
+
+
+def warn(results, msg):
+    """Accumulate warnings in embed_results.json ('warning' stays a single string: the README
+    prints it as one line)."""
+    results["warning"] = ("%s ; %s" % (results["warning"], msg)) if results.get("warning") else msg
+    log("WARNING: %s" % msg)
 
 
 def atsas_bin(atsas_dir):
@@ -548,30 +556,109 @@ def dock_in_density(map_path, model, out_dir, stem, args):
     return out
 
 
-def render_panel(pymol_python, render_script, fitted_pdb, overlay, out_png, kind, param, workdir):
-    """Render ONE panel with PyMOL.
+def render_panel(pymol_python, render_script, argv, out_png, pse, workdir):
+    """Render ONE panel with PyMOL and save its .pse session; returns {png, pse, log}.
 
     ChimeraX --nogui cannot save images ("Unable to save images because OpenGL rendering is
     not available"), so figures go through PyMOL.  Two panels, never one: the bead model and
     the DENSS map each live in their own frame (centred on their own origin, relative
     orientation unconstrained), so drawing them together fakes a "model sticking out of the
     beads" that is not a measurement.
+
+    The panel styling - sample as a yellow cartoon, envelope as translucent white - and the
+    contour arguments live in render-embed-figure.py only, so the .pse a user opens later is
+    the same picture as the .png delivered here.
     """
-    # 渲染脚本有两套 CLI，别只认一套：老版收第 5 个位置参数（fitted overlay out.png kind param），
-    # 新版是 argparse（同样的 4 个位置参数 + --level / --sphere-scale / --pse…）。先按新版试，
-    # 出现 usage 错误再退回位置参数版——两边的 param 语义一样（density=等值面 level，beads=sphere_scale）。
-    flag = "--level" if kind == "density" else "--sphere-scale"
-    base = [pymol_python, render_script, fitted_pdb, overlay, out_png, kind]
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    out = ""
-    for cmd in (base + [flag, str(param)], base + [str(param)]):
-        p = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=env)
-        out = (p.stdout or "") + (p.stderr or "")
-        if os.path.exists(out_png) or "unrecognized arguments" not in out and "usage:" not in out:
-            break
-    if not os.path.exists(out_png):
-        raise RuntimeError("PyMOL produced no image: %s" % " ".join(out.split())[:300])
-    return out_png
+    cmd = [pymol_python, render_script] + list(argv)
+    p = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir,
+                       env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
+    tail = (p.stdout or "") + (p.stderr or "")
+    for f in (out_png, pse):
+        if not os.path.exists(f):
+            raise RuntimeError("PyMOL did not write %s (exit %s): %s"
+                               % (os.path.basename(f), p.returncode, " ".join(tail.split())[-300:]))
+    # the render line carries the density numbers (level, enclosed volume vs denss.log) - keep
+    # it in the JSON so the figure's contour stays auditable
+    keep = [l for l in tail.splitlines()
+            if l.startswith("density:") or l.startswith("beads:") or "transferred" in l]
+    return {"png": out_png, "pse": pse, "render_log": keep}
+
+
+def make_figures(results, meta, model, stem, out, args):
+    """Render both panels (+ .pse each) and record them under results['figures'].
+
+    Each panel is rendered on its own: a missing density map (or a failed bead branch) must not
+    cost the other panel its picture AND its session - requiring both branches to succeed meant
+    a half-successful run delivered no .pse at all.
+    """
+    rs = args.render_script or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                            "render-embed-figure.py")
+    panels = {}
+    if results.get("beads_fit", {}).get("aligned_model") and results.get("bead_model", {}).get("bead_model"):
+        panels["beads"] = [
+            results["beads_fit"]["aligned_model"], results["bead_model"]["bead_model"],
+            os.path.join(out, "%s_in_beads.png" % stem), "beads",
+            "--overlay-transparency", str(args.bead_transparency),
+            "--ss-ref", model, "--size", str(args.figure_size)]
+    if results.get("density_fit", {}).get("best_aligned_model") and meta.get("density_map"):
+        panels["density"] = [
+            results["density_fit"]["best_aligned_model"], meta["density_map"],
+            os.path.join(out, "%s_in_density.png" % stem), "density",
+            "--overlay-transparency", str(args.density_transparency),
+            "--level", str(args.density_level), "--smooth", str(args.density_smooth),
+            "--ss-ref", model, "--size", str(args.figure_size)]
+    figs = {}
+    for kind, argv in panels.items():
+        png, pse = argv[2], os.path.splitext(argv[2])[0] + ".pse"
+        try:
+            figs[kind] = render_panel(args.pymol_python, rs, argv, png, pse, out)
+            log("figure %s: %s + %s" % (kind, os.path.basename(png), os.path.basename(pse)))
+        except Exception as e:
+            figs[kind] = {"status": "failed: %s" % e}
+            log("figure %s failed: %s" % (kind, e))
+    # a panel that is not drawn at all has to say why: an empty result must not be silent
+    if "beads" not in panels:
+        figs["beads"] = {"status": "skipped: %s" % (
+            "no bead model was built or reused" if not results.get("bead_model", {}).get("bead_model")
+            else "CIFSUP did not produce an aligned model")}
+    if "density" not in panels:
+        figs["density"] = {"status": "skipped: %s" % (
+            "this sample has no DENSS map" if not meta.get("density_map")
+            else "fitmap did not produce a posed model")}
+    results["figures"] = figs
+    missing = [k for k, v in figs.items() if not (isinstance(v, dict) and v.get("pse"))]
+    if missing:
+        warn(results, "no PyMOL session was written for panel(s) %s - the figure step failed or "
+                      "was skipped there (see figures.<panel>.status)" % ",".join(sorted(missing)))
+    return results["figures"]
+
+
+def figures_only(out, args):
+    """Re-render both panels of an *existing* embed_results.json (no CIFSUP / fitmap rerun), so
+    a result directory produced before the .pse spec can be completed in seconds."""
+    jp = os.path.join(out, "embed_results.json")
+    if not os.path.exists(jp):
+        raise SystemExit("--figures-only needs an existing %s" % jp)
+    results = json.load(open(jp))
+    model = os.path.abspath(os.path.expanduser(args.model or results.get("model") or ""))
+    if not model or not os.path.exists(model):
+        raise SystemExit("model not found: %s (pass --model)" % model)
+    meta = {"density_map": (results.get("input") or {}).get("density_map")}
+    if meta["density_map"] and not os.path.exists(meta["density_map"]):
+        log("density map from the old run is gone: %s" % meta["density_map"])
+        meta["density_map"] = None
+    for key in ("beads_fit", "density_fit"):
+        blk = results.get(key) or {}
+        for f in ("aligned_model", "best_aligned_model"):
+            if blk.get(f) and not os.path.exists(blk[f]):
+                log("%s.%s of the old run is gone: %s" % (key, f, blk[f]))
+                blk.pop(f, None)
+    results["model"] = model
+    results["out_dir"] = out
+    make_figures(results, meta, model, os.path.splitext(os.path.basename(model))[0], out, args)
+    jdump(results, jp)
+    log("updated %s" % jp)
+    return 0
 
 
 # --------------------------------------------------------------- main
@@ -581,7 +668,8 @@ def main():
                     "electron-density map (one SAXS sample directory).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("sample_dir", help="processed sample directory, e.g. .../Tube-SAXS/A5-05-1")
-    ap.add_argument("--model", required=True, help="high-resolution model to embed (.pdb)")
+    ap.add_argument("--model", default=None,
+                    help="high-resolution model to embed (.pdb); required unless --figures-only")
     ap.add_argument("--out-dir", default=None,
                     help="output directory (default: <processed>/_embed/<sample>, i.e. the "
                          "sample directory's sibling - the sample dir is wiped on pipeline re-runs)")
@@ -622,6 +710,22 @@ def main():
     ap.add_argument("--skip-bead", action="store_true", help="skip the bead-model branch")
     ap.add_argument("--skip-density", action="store_true", help="skip the electron-density branch")
     ap.add_argument("--no-figure", action="store_true", help="do not render the two PyMOL panels")
+    ap.add_argument("--figures-only", action="store_true",
+                    help="re-render the two panels (.png + .pse) of an existing "
+                         "embed_results.json without rerunning CIFSUP/fitmap")
+    ap.add_argument("--figure-size", type=int, default=1200,
+                    help="ray-traced figure size (px); a .pse is written next to every panel")
+    ap.add_argument("--bead-transparency", type=float, default=0.9,
+                    help="transparency of the white bead spheres (0=opaque, 1=invisible); beads "
+                         "need a large value because overlapping spheres multiply")
+    ap.add_argument("--density-transparency", type=float, default=0.7,
+                    help="transparency of the white density isosurface (0=opaque, 1=invisible)")
+    ap.add_argument("--density-level", default="auto",
+                    help="density isosurface level in map units, or 'auto' = the level whose "
+                         "enclosed volume matches DENSS's own support volume (denss.log)")
+    ap.add_argument("--density-smooth", default="auto",
+                    help="Gaussian sigma (A) applied to the density map before contouring, "
+                         "'auto' = one voxel, 0 = off")
     args = ap.parse_args()
 
     sample_dir = os.path.abspath(os.path.expanduser(args.sample_dir))
@@ -634,6 +738,10 @@ def main():
         out = os.path.join(sib, "_embed", os.path.basename(sample_dir.rstrip("/")))
     out = os.path.abspath(out)
     os.makedirs(out, exist_ok=True)
+    if args.figures_only:
+        return figures_only(out, args)
+    if not args.model:
+        raise SystemExit("--model is required (or use --figures-only on an existing result dir)")
     model = os.path.abspath(os.path.expanduser(args.model))
     if not os.path.exists(model):
         raise SystemExit("model not found: %s" % model)
@@ -687,25 +795,8 @@ def main():
                 results["density_fit"] = {"status": "failed: %s" % e}
                 log("density branch failed: %s" % e)
 
-    if (not args.no_figure and results.get("bead_model")
-            and results.get("density_fit", {}).get("best_aligned_model")):
-        rs = args.render_script or os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                "render-embed-figure.py")
-        figs = {}
-        try:
-            figs["beads"] = render_panel(
-                args.pymol_python, rs, results["beads_fit"]["aligned_model"],
-                results["bead_model"]["bead_model"],
-                os.path.join(out, "%s_in_beads.png" % stem), "beads", 0.5, out)
-            figs["density"] = render_panel(
-                args.pymol_python, rs, results["density_fit"]["best_aligned_model"],
-                meta["density_map"],
-                os.path.join(out, "%s_in_density.png" % stem), "density", 0.02, out)
-            results["figures"] = figs
-            log("figures: %s , %s" % (figs["beads"], figs["density"]))
-        except Exception as e:
-            results["figures"] = "failed: %s" % e
-            log("figures failed: %s" % e)
+    if not args.no_figure:
+        make_figures(results, meta, model, stem, out, args)
 
     jdump(results, os.path.join(out, "embed_results.json"))
     log("wrote %s" % os.path.join(out, "embed_results.json"))

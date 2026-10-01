@@ -121,14 +121,30 @@ def build(d):
         A("- `fitmap_r<RR>.csv` / `.log` —— 每个 resolution 下 fitmap 的**全部唯一解**：旋转/平移矩阵 + correlation / cam / overlap / average_map_value / steps / shift / angle")
         A("- `*_in_density_r<RR>.pdb` —— 该 resolution 下最好的那个摆法（**在电子云坐标系里**）")
     figs = d.get("figures") or {}
-    if figs:
-        # 图名来自 embed_results.json 的 figures（随模型文件名走，如 4DH1-KDPV_in_beads.png）
-        beads_png = os.path.basename(figs.get("beads") or figs.get("bead") or "")
-        dens_png = os.path.basename(figs.get("density") or "")
-    else:
-        beads_png, dens_png = "embed_beads.png", "embed_density.png"
+    if not isinstance(figs, dict):
+        figs = {}
+
+    def _path(x):
+        # figures.<panel> is {png, pse, render_log} (new) or a path string (old runs)
+        return os.path.basename(x.get("png", "") if isinstance(x, dict) else (x or ""))
+
+    beads_png = _path(figs.get("beads") or figs.get("bead")) or "embed_beads.png"
+    dens_png = _path(figs.get("density")) or "embed_density.png"
     A("- `%s`（珠模型坐标系）/ `%s`（电子云坐标系）—— 两张图**故意分开**：两个靶子各自居中在各自原点，相对取向没有数据约束，混画会得到\"模型戳出珠球\"的假象"
-      % (beads_png or "embed_beads.png", dens_png or "embed_density.png"))
+      % (beads_png, dens_png))
+    pses = [(k, os.path.basename(v["pse"])) for k, v in figs.items()
+            if isinstance(v, dict) and v.get("pse")]
+    if pses:
+        A("- **`%s` —— 上面两张图的 PyMOL 会话（每张图一个）：样品 = 黄色 cartoon，包络 = 半透明白色**；"
+          "直接用 `pymol <文件>.pse` 打开即可改视角/换 representation，成品图不必重渲"
+          % "` / `".join(n for _, n in pses))
+    for k, v in figs.items():
+        if isinstance(v, dict) and v.get("status"):
+            A("- ⚠️ 面板 %s 没出图：`%s`" % (k, v["status"]))
+    rl = [l for v in figs.values() if isinstance(v, dict) for l in (v.get("render_log") or [])]
+    if rl:
+        A("- 渲染参数（density 的等值面水平与包络体积、beads 的球半径）：%s"
+          % "；".join("`%s`" % l.strip() for l in rl))
     A("")
     A("## 3. 判据（本目录的数字该怎么读）")
     A("")

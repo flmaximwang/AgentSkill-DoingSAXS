@@ -15,13 +15,29 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 import pymol
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mrcmap  # noqa: E402  (ships next to this script)
 
 # --overlay-transparency default depends on the representation: overlapping spheres pile up
 # (every layer multiplies the transmitted light), so the bead envelope needs a much larger
 # value than a single isosurface shell before the sample stays visible through it.
-DEFAULT_TRANSPARENCY = {"beads": 0.85, "density": 0.55}
+DEFAULT_TRANSPARENCY = {"beads": 0.9, "density": 0.7}
+
+
+def bead_radius_from_cif(path):
+    """ATSAS writes the dummy-atom radius into the model's own header
+    (`_atsas_dummy_atom_model.value`, e.g. 2.200).  Drawing the beads at that radius makes
+    the envelope the model's actual bead volume instead of a scaled-up vdW guess."""
+    for line in open(path):
+        if line.startswith("_atsas_dummy_atom_model.value"):
+            return float(line.split()[1].strip("'"))
+        if line.startswith("ATOM"):
+            break
+    return None
 
 
 def parse_args(argv=None):
@@ -34,19 +50,36 @@ def parse_args(argv=None):
     ap.add_argument("out_png", help="output image (.png)")
     ap.add_argument("kind", choices=["beads", "density"],
                     help="what the overlay is: dummy-atom spheres, or a map isosurface")
-    ap.add_argument("--level", type=float, default=0.02,
-                    help="isosurface level for kind=density (in map units)")
+    ap.add_argument("--level", default="auto",
+                    help="isosurface level for kind=density, in map units; 'auto' takes the "
+                         "level whose enclosed volume matches DENSS's own support volume "
+                         "(denss.log 'Final Support Volume'), falling back to 0.02")
     ap.add_argument("--sphere-scale", type=float, default=0.5,
-                    help="PyMOL sphere_scale for kind=beads")
+                    help="PyMOL sphere_scale for kind=beads, used only when the bead radius "
+                         "cannot be taken from the model")
+    ap.add_argument("--bead-radius", type=float, default=None,
+                    help="draw dummy atoms at this radius (A) instead of scaling vdW radii "
+                         "(default: the model's own _atsas_dummy_atom_model.value)")
     ap.add_argument("--overlay-transparency", type=float, default=None,
                     help="0=opaque, 1=invisible (default: %s for beads, %s for density)"
                          % (DEFAULT_TRANSPARENCY["beads"], DEFAULT_TRANSPARENCY["density"]))
-    ap.add_argument("--smooth", type=float, default=0.0,
-                    help="Gaussian sigma (voxels) applied to the map before isosurfacing, "
-                         "0 = off; coarse maps (6-7 A voxels) look faceted without it")
+    ap.add_argument("--transparency-mode", type=int, default=1,
+                    help="PyMOL transparency_mode; mode 2 (PyMOL's default) silently drops "
+                         "sphere transparency in ray tracing, so bead spheres come out opaque")
+    ap.add_argument("--smooth", default="auto",
+                    help="Gaussian sigma to apply to the map before isosurfacing, in Angstrom "
+                         "(0 = off); 'auto' uses one voxel of the map, which removes the voxel "
+                         "facets of a coarse DENSS map without moving the envelope's volume "
+                         "(the level is re-derived from the smoothed map)")
     ap.add_argument("--sample-color", default="yellow", help="colour of the atomic model")
     ap.add_argument("--overlay-color", default="white", help="colour of the envelope")
     ap.add_argument("--size", type=int, default=1200, help="ray-traced image size (px)")
+    ap.add_argument("--zoom-buffer", type=float, default=5.0,
+                    help="margin (A) left around the drawn objects when framing the shot")
+    ap.add_argument("--frame-margin", type=float, default=1.1,
+                    help="camera pull-back factor applied after framing (1.0 = none); a surface "
+                         "object cannot be framed with a margin by zoom(), so this dolly-out is "
+                         "what keeps the envelope inside the picture")
     ap.add_argument("--ray-trace-mode", type=int, default=0,
                     help="PyMOL ray_trace_mode (1 = black outlines, 0 = off)")
     ap.add_argument("--ss-ref", default=None,
@@ -64,12 +97,40 @@ def main(argv=None):
         t = DEFAULT_TRANSPARENCY[args.kind]
     pse = args.pse or os.path.splitext(args.out_png)[0] + ".pse"
 
+    overlay, level = args.overlay, None
+    if args.kind == "density":
+        m = mrcmap.read(args.overlay)
+        support = mrcmap.denss_support_volume(
+            os.path.join(os.path.dirname(os.path.abspath(args.overlay)), "denss.log"))
+        sigma = float(m["voxel"].mean()) if args.smooth == "auto" else float(args.smooth)
+        if sigma > 0:
+            m["data"] = mrcmap.smooth(m, sigma)
+            # keep the smoothed copy beside the figure, so the rendered surface is reproducible
+            overlay = os.path.join(
+                os.path.dirname(os.path.abspath(args.out_png)),
+                "%s_map_smooth%gA.mrc" % (os.path.splitext(os.path.basename(args.out_png))[0],
+                                          round(sigma, 2)))
+            mrcmap.write_like(m, overlay, m["data"])
+        # the level is read off the map that actually gets contoured (smoothing moves the
+        # volume-level curve, so a level derived from the raw map over-inflates the surface)
+        if args.level != "auto":
+            level = float(args.level)
+        else:
+            level = mrcmap.level_for_volume(m, support) if support else 0.02
+        vol = mrcmap.volume_above(m, level)
+        print("density: level=%.5f | enclosed %.0f A^3 | denss.log support %s A^3 (%s) | "
+              "smooth %g A | voxel %.3g A"
+              % (level, vol, ("%.0f" % support) if support else "n/a",
+                 ("%.1f%%" % (100.0 * vol / support)) if support else "no denss.log",
+                 sigma, float(m["voxel"].mean())))
+
     pymol.finish_launching(["pymol", "-cq"])
     from pymol import cmd
 
     cmd.load(args.fitted, "sample")
-    cmd.load(args.overlay, "density_map" if args.kind == "density" else "beads")
-    cmd.hide("everything", "beads")
+    cmd.load(overlay, "density_map" if args.kind == "density" else "beads")
+    if args.kind == "beads":
+        cmd.hide("everything", "beads")
     try:
         cmd.dss("sample")
     except Exception as e:
@@ -93,20 +154,29 @@ def main(argv=None):
     except Exception as e:
         print("ss transfer failed:", e)
 
+    # mode 2 (PyMOL's default) drops sphere transparency in ray tracing, so bead panels come
+    # out opaque and hide the sample (measured 2026-10-01, mean |pixel diff| against an opaque
+    # render at sphere_transparency 0.8: 2.8/255 in mode 2 vs 8.4/255 in modes 0/1/3).
+    cmd.set("transparency_mode", args.transparency_mode)
+
     if args.kind == "beads":
         cmd.show("spheres", "beads")
-        cmd.set("sphere_scale", args.sphere_scale, "beads")
+        radius = args.bead_radius or bead_radius_from_cif(overlay)
+        if radius:
+            # draw the beads at the model's own dummy-atom radius (spheres then touch along the
+            # 4.4 A lattice instead of overlapping into capsules, which is what a vdW-based
+            # sphere_scale produced: measured 2026-10-01 on damaver-cluster001-damaver.cif)
+            cmd.alter("beads", "vdw=%f" % radius)
+            cmd.set("sphere_scale", 1.0, "beads")
+            print("beads: drawn at the model's dummy-atom radius %.3f A" % radius)
+        else:
+            cmd.set("sphere_scale", args.sphere_scale, "beads")
         cmd.set("sphere_quality", 2, "beads")
         cmd.color(args.overlay_color, "beads")
-        # spheres need sphere_transparency: the generic `transparency` setting is surfaces-only,
-        # which is why bead panels used to come out opaque (measured 2026-10-01).
+        # spheres need sphere_transparency: the generic `transparency` setting is surfaces-only
         cmd.set("sphere_transparency", t, "beads")
     else:
-        src = "density_map"
-        if args.smooth and args.smooth > 0:
-            cmd.map_new("density_smooth", "gaussian", args.smooth, "density_map")
-            src = "density_smooth"
-        cmd.isosurface("density", src, args.level)
+        cmd.isosurface("density", "density_map", level)
         cmd.color(args.overlay_color, "density")
         cmd.set("transparency", t, "density")
         cmd.disable("density_map")
@@ -119,7 +189,21 @@ def main(argv=None):
     cmd.set("ray_trace_mode", args.ray_trace_mode)
     cmd.set("antialias", 2)
     cmd.set("cartoon_side_chain_helper", 1)
-    cmd.orient()
+    # frame on the drawn objects only: `all` would include the (disabled) map brick, whose
+    # 218 A box shrinks the sample to a speck in the corner.  zoom() is an atom selection, so
+    # it cannot see an isosurface object at all (a surface has no atoms) - the density panel
+    # is framed with orient(), which uses the scene bounding box.
+    if args.kind == "density":
+        cmd.orient()
+    else:
+        have = set(cmd.get_names("objects"))
+        drawn = [n for n in ("sample", "beads") if n in have]
+        cmd.zoom(" or ".join(drawn) if drawn else "all", args.zoom_buffer)
+    if args.frame_margin != 1.0:
+        v = list(cmd.get_view())
+        for i in (9, 10, 11):
+            v[i] *= args.frame_margin
+        cmd.set_view(v)
     cmd.ray(args.size, args.size)
     cmd.png(args.out_png, dpi=150)
     if not args.no_pse:

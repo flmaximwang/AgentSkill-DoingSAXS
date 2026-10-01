@@ -1,6 +1,6 @@
 ---
 name: embed-a-model-in-bead-and-density-models
-description: "把 model 嵌进珠模型（DAMMIF/DAMAVER）与 DENSS 电子云时用：CIFSUP 叠珠模型给 NSD、ChimeraX fitmap 把模型嵌进 .mrc 给 correlation/overlap，两个靶子各有自己的分数与各自「看不出对错」的方式。用于「把 PDB 叠/嵌进珠模型或电子云」「NSD 0.87 算好吗」「fitmap 只给 overlap 没有 correlation」「同一个包络有好几个差不多的解」「ChimeraX 存不了图」；不负责判模型配不配数据（转 fit-a-high-resolution-model-to-data），不负责评重建质量/判据（转 evaluate-a-shape-reconstruction），不负责从曲线建珠模型（转 run-a-tube-/run-a-sec-saxs-pipeline-end-to-end）。"
+description: "把 model 嵌进珠模型（DAMMIF/DAMAVER）与 DENSS 电子云时用：CIFSUP 叠珠模型给 NSD、ChimeraX fitmap 把模型嵌进 .mrc 给 correlation/overlap，两个靶子各有自己的分数与各自「看不出对错」的方式；每个结果都要出 pse（样品黄色 cartoon + 包络半透明白色）。用于「把 PDB 叠/嵌进珠模型或电子云」「NSD 0.87 算好吗」「fitmap 只给 overlap 没有 correlation」「同一个包络有好几个差不多的解」「ChimeraX 存不了图」「出个 pse / 珠球不透」；不负责判模型配不配数据（转 fit-a-high-resolution-model-to-data），不负责评重建质量/判据（转 evaluate-a-shape-reconstruction），不负责从曲线建珠模型（转 run-a-tube-/run-a-sec-saxs-pipeline-end-to-end）。"
 source_book: ATSAS 官方手册 *CIFSUP*（ATSAS ≥ 4 里 SUPCOMB 的后继）/ *SUPCOMB*（NSD 定义与判读）；ChimeraX 用户文档 *Command: fitmap*；上游流水线的实跑产物（2026-10-01 BL19U2 管式批 A5-05-1…6 + /…/DataProcess_2026.10.01/models/A5.pdb）
 source_chapter: 源A CIFSUP 手册（Introduction / Options / Runtime Output / Examples）· SUPCOMB 手册（Introduction 的 NSD 定义）· ChimeraX fitmap（Usage / Options / Global Search Options / Fit List）；源B 实跑：A5-05-1…6 的 embed_results.json + cifsup/fitmap 日志
 tags: [saxs, atsas, cifsup, supcomb, chimerax, fitmap, denss, bead-model, alignment, nsd, model-embedding]
@@ -108,9 +108,20 @@ related_skills:
   A5_in_density_r<RR>.pdb       各 resolution 下 fitmap 找到的最好摆法（在电子云坐标系里）
   fitmap_r<RR>.csv              fitmap 全部唯一解的矩阵与四个分数
   fitmap_r<RR>.log              ChimeraX 日志（含 Top 相关值列表与矩阵）
-  embed_results.json            上面所有数字的机器可读版（含 warning/ambiguity）
-  A5_in_beads.png / A5_in_density.png   两张分坐标系的图（PyMOL 渲，见 B）
+  embed_results.json            上面所有数字的机器可读版（含 warning/ambiguity/figures）
+  A5_in_beads.png + .pse        珠模型坐标系的图 + 它的 PyMOL 会话
+  A5_in_density.png + .pse      电子云坐标系的图 + 它的 PyMOL 会话
+  A5_in_density_map_smooth<σ>A.mrc   电子云出图实际用的（平滑过的）等值面图，供复现
 ```
+
+**两张图 + 两个 `.pse` 是硬性交付物**（不是可选附件）：图给人看，`.pse` 给人**接着改**——
+打开 `pymol A5_in_beads.pse` 就能换视角/换 representation/补标注再出图，不必重跑 CIFSUP/fitmap。
+样式固定成一套，任何人打开任一目录看到的是同一种读法：
+
+| 对象 | 画法 |
+|---|---|
+| 高分辨模型 | **黄色 cartoon**（对象名 `sample`） |
+| 珠模型 / 电子云包络 | **半透明白色**（对象名 `beads` / `density`；珠球 `sphere_transparency`，等值面 `transparency`） |
 
 **为什么在样品目录之外**：上游流水线（`run-a-tube-…` / `run-a-sec-…`）**重跑时会重建整个样品目录**，
 放进 `<样品>/embed/` 的产物会被下一次重跑删掉（2026-10-01 实测：一批已在 `<样品>/embed/` 跑好的结果
@@ -141,6 +152,13 @@ related_skills:
 - 第一版图把"珠模型 + 电子云 + 电子云里 fit 好的模型"画在一张图上 → 看到"模型戳出珠球一大截"的假象。原因：珠模型与 DENSS 图各自居中在各自原点，相对取向无约束。**两个靶子两张图**。
 - 用 ChimeraX `--nogui` 渲图直接失败：`LimitationError: Unable to save images because OpenGL rendering is not available`（脚本不报错，只是没有 png）。改用 **PyMOL**：`/Applications/PyMOL.app/Contents/bin/python3.10` 里 `pymol.finish_launching(['pymol','-cq'])` → `cmd.ray` → `cmd.png`（珠球画 `spheres`，电子云画 `isosurface` 并给 `transparency`，否则珠球把蛋白全遮住）。
 
+**4b. 珠球\"给了透明度却还是不透\"——PyMOL 的 `transparency_mode` 才是开关**（源B，实跑量测）
+
+- 两种画法各认自己的开关：珠球只认 **`sphere_transparency`**（`transparency` 只管 surface，所以老脚本对珠球设 `transparency` 等于没设）；而**即使设对了 `sphere_transparency`，默认的 `transparency_mode 2`（OIT 多进程）在 ray trace 里也会把它丢掉**。同一组命令、`sphere_transparency 0.8`，与全不透明渲染的逐像素平均差：mode 2 = **2.8/255**（等于没透），mode 0/1/3 = **8.4/255**（真的透了）。脚本现在显式设 `transparency_mode 1`。
+- 珠球还给成**模型自己的 dummy atom 半径**（`.cif` 头里的 `_atsas_dummy_atom_model.value`，本批 2.2–2.3 Å），而不是拿 vdW×`sphere_scale` 猜：后者会把珠子画大到沿 4.4 Å 晶格互相吞并成\"米粒\"，出图里看着像另一种模型。
+- 电子云等值面用 6.8 Å 体素直接渲会出现大片平面刻面；出图前用**一个体素的 Gaussian 平滑**（`--smooth auto`）并**在平滑后的图上重算等值面水平**（口径：包围体积回到 `denss.log` 的 `Final Support Volume`，实测 56077 vs 56392 Å³ = 99.4%），刻面消失、包络体积不变。
+- `.pse` 必须显式 `cmd.save()`：会话里存的是逐对象设置（`beads: sphere_transparency 0.9` / `density: transparency 0.7`），回读验证过——png 是什么样，打开 pse 就是什么样。
+
 **5. 同一个模型在 6 个稀释序列样品上的 NSD 从 0.775 到 4.426**（源B，实跑）
 
 - 同一条 `A5.pdb`、同一套流程，只换样品：可信的三个样品 **0.875(A5-05-1) / 0.775(A5-05-2) / 1.931(A5-05-6)**；
@@ -159,6 +177,7 @@ related_skills:
 - `fitmap` 结果里 `correlation` 是 None，或者只有一个 `overlap`。
 - 同一张电子云里跑出好几个分数几乎一样的摆法，不知道报哪个。
 - 想要一张"模型在珠模型里/在电子云里"的图，发现 ChimeraX 无头模式存不出 png。
+- 「出一张模型嵌进包络的图，给我 pse」「样品黄色 cartoon、包络半透明白色」「珠球/电子云画不出透明感」。
 - 珠模型还没建（样品目录里只有 `.mrc` 和曲线），需要先把珠模型建出来再嵌。
 
 **语言信号**
@@ -203,10 +222,11 @@ related_skills:
    完成标准：每个 R 都有 `correlation / correlation_about_mean / overlap / average_map_value / n_unique_fits / top3`。判停点：**没有 `resolution` 就会拿到 correlation=None**；`search 0` 只是局部优化，结果取决于初始位置——两者都不算做完了。
 7. **报"姿态散布"，不是报一个摆法。** 用各 R 下最好摆法的 CA 坐标两两算 RMSD（都在电子云坐标系里）。
    完成标准：给出"最大散布 X Å + 对应的 R + 分数差"。判停点：散布 > 5 Å 且分数接近（实测 28.9 Å / 差 0.004）→ 结论必须写成"至少两个分数相当的不同摆法"，并说明 SAXS 包络本身不唯一。
-8. **出图（两张）。** 珠模型坐标系一张（模型 + 珠球）、电子云坐标系一张（模型 + isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。珠球记得给透明度，否则蛋白全被遮住。
-   完成标准：两张 png 里模型都在包络内/内缘，且没有把两个坐标系画进同一张图。
-9. **落盘并交付。** 每个样品一个 `_embed/<样品>/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figure`）、叠好的 PDB/CIF、fitmap CSV、两张图；再写一份人看的 `README.md`。
-   完成标准：别人只拿这些文件就能复述"用的哪条 q 窗口、哪个 selection、哪个 resolution、分数是多少、有没有第二个解"。
+8. **出图（两张）+ 两张图各自的 `.pse`。** 珠模型坐标系一张（模型 + 白色半透明珠球）、电子云坐标系一张（模型 + 白色半透明 isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。样式固定：`sample` 黄色 cartoon、`beads`/`density` 半透明白色；**两张图各自独立渲染**（一条分支没有包络不该让另一条也丢掉图和会话）。
+   完成标准：每个存在的分支都有 `*_in_beads.png` + `*_in_beads.pse` / `*_in_density.png` + `*_in_density.pse`，且**回读 `.pse` 能看到逐对象设置**（`beads: sphere_transparency 0.9`、`density: transparency 0.7`、两个对象颜色分别是 white/yellow）；缺哪个面板就要在 `embed_results.json` 的 `figures.<面板>.status` 里写明原因。
+   已经跑过的目录补 `.pse` 用 `--figures-only`（读现成 `embed_results.json`，不重跑 CIFSUP/fitmap），几秒一个。
+9. **落盘并交付。** 每个样品一个 `_embed/<样品>/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figures`）、叠好的 PDB/CIF、fitmap CSV、两张 png、两个 pse；再写一份人看的 `README.md`（`write-embed-readme.py` 会把 pse 与渲染参数一起列出来）。
+   完成标准：别人只拿这些文件就能复述"用的哪条 q 窗口、哪个 selection、哪个 resolution、分数是多少、有没有第二个解"，并且能直接打开 `.pse` 接着改图。
 
 ## B — 边界 (Boundary)
 
@@ -227,6 +247,10 @@ related_skills:
 - **把 DAMAVER 的 NSD 阈值当嵌入阈值**：DAMAVER 的 mean NSD 是"这批 DAMMIF 模型彼此像不像"，与本 skill 的"模型 vs 珠模型"不是同一件事，别互相套。
 - **两个坐标系画一张图**：珠模型与 DENSS 图各自居中在各自原点、相对取向无约束，混画会得到假的"戳出去"。
 - **ChimeraX `--nogui` 存图失败**：`Unable to save images because OpenGL rendering is not available`（不会让脚本退出，只会静默没有 png）。用 PyMOL 渲。
+- **珠球透明度设了不透**：`transparency` 对 spheres 无效（只有 surface 认），且 PyMOL 默认 `transparency_mode 2` 会把 `sphere_transparency` 在 ray trace 里吃掉（实测 mode 2 的平均像素差 2.8/255 ≈ 没透，mode 1 是 8.4/255）。出图脚本显式 `transparency_mode 1` + `sphere_transparency`。
+- **珠球按 vdW×scale 画**：会把 2.2 Å 的 dummy atom 画大到沿晶格互相吞并，包络看着像另一种（更粗）的重建。用 `.cif` 头里的 `_atsas_dummy_atom_model.value` 当半径。
+- **电子云等值面用粗体素硬渲**：6.8 Å 体素的 DENSS 图直接出等值面是满屏刻面；平滑一个体素后必须**重新解出等值面水平**（否则同一 level 在平滑图上包围体积会涨到 279%，实测），口径是与 `denss.log` 的 support volume 一致。
+- **只在一侧有包络时不渲染**：老逻辑要求珠模型与电子云**都**成功才出图，半成功的结果连 `.pse` 都没有。两个面板各自独立渲染，缺的那侧写进 `figures.<面板>.status` 与 `warning`。
 - **喂整条曲线给 GNOM**：低 q 上翘会让 GNOM 给出 χ² 数百、"SUSPICIOUS"的 P(r)，珠模型跟着歪（见 A1-2）。
 
 **版本与依赖**
@@ -243,9 +267,11 @@ related_skills:
 - DENSS 电子云**单模型没有 FSC**，读不出重建分辨率 → 用 R 阶梯 + 姿态散布代替，这是替代口径，不是分辨率测量。
 - 引用要求：用 CIFSUP 替代 SUPCOMB 时引 SUPCOMB 原文（M. Kozin & D. Svergun (2001) *J Appl Cryst* 34, 33-41）；用 DENSS 图时引 T. D. Grant *Nature Methods* (2018) 15, 191-193；用 ChimeraX 时引其论文。
 
-**参考文件**：CIFSUP/fitmap 的完整参数表、CSV 列名、RAWAPI 调用式、以及本次 6 个样品的实跑数字见
-`references/bead-and-density-embedding-parameters.md`。可执行入口：`scripts/embed-model.py`（一条命令跑完两条分支）、
-`scripts/render-embed-figure.py`（PyMOL 出图）、`scripts/write-embed-readme.py`（出人看的 README）、
+**参考文件**：CIFSUP/fitmap 的完整参数表、CSV 列名、RAWAPI 调用式、出图样式与本次实跑数字见
+`references/bead-and-density-embedding-parameters.md`。可执行入口：`scripts/embed-model.py`（一条命令跑完两条分支；
+`--figures-only` 只补出图/`.pse`）、`scripts/render-embed-figure.py`（PyMOL 出图 + 存 `.pse`）、
+`scripts/mrcmap.py`（极小 MRC 读写：算包络体积、定等值面水平、平滑地图）、
+`scripts/write-embed-readme.py`（出人看的 README）、
 `scripts/split-cif-chains.py`（按 `label_asym_id` 把多聚体 CIF 拆成 `<stem>_<链>.cif`，`--list` 只看链与原子数）。
 
 ## 相关 skills
