@@ -1,7 +1,7 @@
 ---
 name: run-a-sec-saxs-pipeline-end-to-end
 description: "端到端跑一条 SEC-SAXS 系列：多峰逐峰分析、逐帧归一化、裁剪区视频、多区间 Guinier 表、IFT、分子量、DAMMIF/DENSS 形状重建（图像→报告全程 RAW；无逐帧 txt 时补 BL19U2 header txt），每个节点落 .dat + 表格 + 图 + RAW PDF 报告 + 结果 README。用于「把这条 SEC-SAXS 数据端到端跑一遍」「这条系列有两个洗脱峰、怎么分别分析」「一千多帧怎么变成曲线和报告」「归一化视频怎么做」；不负责单点判据（Guinier 取点→assess-guinier-fit-quality，P(r)/Dmax→compute-and-validate-p-of-r，MW 方法选择→choose-a-molecular-weight-method，重建评估→evaluate-a-shape-reconstruction，未解析重叠峰分解→deconvolve-overlapping-elution-peaks）。"
-version: 1.2.0
+version: 1.3.0
 author: hermes
 license: MIT
 tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss, multi-peak, peak-detection]
@@ -342,6 +342,57 @@ python run-raw-sec-pipeline.py ... \
   多峰识别的全部前提是"扣减后的曲线可信"。
 - 洗脱事件只抬高几个百分点、噪声又大的数据 → 阈值怎么调都分不出峰，别硬分；
   按判据写一份"数据不可用/不可分辨"的说明（见下面的"结果不可用-README"那条）。
+
+## 峰内梯度：把**一条峰的不同位置**当稀释序列用
+
+SEC 洗脱峰的**浓度沿帧变化**（峰顶最浓、两翼渐稀），所以同一条峰天然是一条 **c 递减序列**，
+而且同一 buffer、同一批样品，**不需要另配稀释样品**。流水线把它做成一个节点（`--gradient`，默认开），
+每峰产出 `gradient/gradient_slices.csv`、`gradient.json`、`gradient.png` 与 README 第 8 节。
+
+**能回答三个原流程答不了的问题**：
+
+1. **Rg / MW 的浓度依赖**：理想单分散体系 Rg 不随 c 变；Rg 随 c **下降** → 排斥型相互作用
+   （或浓度依赖解离）；Rg 随 c **上升** → 吸引/自缔合（低聚态，再看 MW 是否同向）。
+2. **c→0 外推**：把 Rg 外推到无限稀释（去掉相互作用）→ `Rg0 ± err`（c→0 截距）与直接中位值对比。
+3. **两翼互检**：同一个 c 在峰的上升翼与下降翼各出现一次，两者的 Rg/MW 必须在误差内一致——
+   比任何单点判据都更容易暴露基线漂移、组分变化、扣减残差。
+
+**三条铁律（不遵守这个节点就没意义）**：
+
+- **所有切片共用同一条 q 区间**（默认沿用主分析的 `auto` 区间，`--gradient-q` 可显式给）。
+  换区间 → Rg 差异里混进"取点差异"，就不能归因于浓度。
+- **浓度是相对的**（扣减后低 q 窗口积分 / 峰顶值）。SEC 的绝对浓度未知——所以结论只能写
+  "随（相对）浓度如何变化"、以及 c→0 外推值，**不能**写"在 x mg/mL 时"。
+- **切片要连续**（`--gradient-mode frames`，默认）：一个切片内的帧是**连续**帧块，块内组分几乎不变。
+  `height` 模式按相对峰高分带（帧可能不连续），适合峰形不规则时。
+
+```bash
+python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> --cfg <日期>.cfg \
+  --gradient auto|off [--gradient-slices 5] [--gradient-mode frames|height] \
+  [--gradient-min-frames 3] [--gradient-min-conc 0.08] [--gradient-q "qlo,qhi"|auto]
+```
+
+**产物与怎么读**：`gradient_slices.csv` 每行一个切片（`side` 分 asc/desc/band/all、`conc_rel` 相对浓度、
+`window` 帧区间、Rg±err、I(0)、qRg 边界、r²、MW）；`gradient.png` 三格 =
+峰上切片位置（蓝=上升翼、橙=下降翼、黑=整窗）→ **Rg vs c**（带 c→0 外推线）→ MW 与 I(0) vs c。
+判词按"斜率是否显著（|t| = |slope|/SE ≥ 2 且变化 > 2×中位 Rg 误差）"三档给：
+🟢 无浓度依赖 / 🟡 随浓度升或降（并写清方向与可能机制）/ 🔴 不可判（可用切片不足）。
+
+**自检三条**：
+
+- `I(0)` 对 c 的**双对数斜率应 ≈1**（理想稀释线性）。偏离时先怀疑**浓度代理本身**（色谱窗口、滚动中位
+  基线对宽峰峰顶的压缩）与扣减线性——它只影响 c 轴的标度（也就是 c→0 外推的那个截距），
+  **不影响**"Rg 随 c 升/降"这个方向判断。本机实测两峰都是 0.43–0.45，方向结论不受影响，
+  但外推值当"量级参考"而不是精密值。
+- Rg 误差**必然随 c 降低变大**（越稀越差）——所以看趋势要带误差棒，不要拿最稀的点下结论。
+- 峰顶附近的切片不一定最可信（上样/柱头效应、聚集峰常在最前沿）。
+
+**实测锚点（本机 4EH2-KDPV-ZN，两峰 1500 帧，同一 q 区间）**：主峰 P1（apex 812，窗 801-832）
+5 个切片 + 整窗，相对浓度 0.28–0.88；判词与数字见该结果目录的 `README.md` 第 8 节与
+`gradient/gradient_slices.csv`。
+
+**什么时候别用它**：峰窗只有几帧（切片凑不出 ≥2 个可用）；洗脱事件只抬高几个百分点（浓度梯度太小，
+c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，别把混合物的"浓度依赖"当相互作用）。
 
 ## 复核点（跑完先看这几处，再看数字）
 

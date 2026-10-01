@@ -58,7 +58,7 @@ RAW 的 `SASCalc.findSampleRange()` 只取 `argmax(peak_heights)` 那个峰，�
 用原流程跑出来**只有最大峰的那一条曲线**，第二个峰**静默消失**（产物看起来完全正常，只是少了东西）。
 SEC 流水线现在默认 `--multi-peak auto`：认峰（扣减后低 q 窗口积分的色谱图 + 滚动中位基线 +
 RAW 的 `savgol`/`find_peaks` 口径）→ ≥2 个峰就 `peaks/peakNN_apexNNNNN/` **每峰一套完整产物**
-（各自用"紧邻本峰的前后两段 buffer + 本峰峰窗"重跑扣减与下游分析），顶层 `README.md` 是索引。
+（各自用"紧邻本峰的前后两段 buffer + 本峰峰窗"重跑扣减与下游分析；每峰再切片做**峰内梯度**——把峰内不同位置当稀释序列看 Rg/MW 的浓度依赖并外推 c→0），顶层 `README.md` 是索引。
 
 "代码判不干净"的部分做成**视觉复核的一步**：
 
@@ -72,6 +72,9 @@ RAW 的 `savgol`/`find_peaks` 口径）→ ≥2 个峰就 `peaks/peakNN_apexNNNN
   主导（实测 1500 帧只标记 69 个散落噪声帧 → 逐峰 `frame_params.csv` **整列 -1**，且不报错）。
   流水线默认改用低 q 窗口积分强度（`--frame-flag-q "0.01,0.05"`，与认峰同一窗口），同一数据 P1
   从 0 帧变 112 帧有值；要回到 RAW 默认口径传 `--frame-flag-q none`。
+
+
+**峰内梯度（把一条峰的不同位置当稀释序列）**：峰顶最浓、两翼渐稀 → 同一条峰天然是 c 递减序列，不需要另配稀释样品。节点 `--gradient`（默认开）每峰出 `gradient/gradient_slices.csv`、`gradient.png`、README 第 8 节：**Rg/MW vs 相对浓度 + c→0 外推 + 上升/下降两翼互检**，所有切片**共用同一条 q 区间**（否则 Rg 差异会混入取点差异）。实测 `4EH2-KDPV-ZN` 两峰都是「无浓度依赖」（ΔRg 1.18 / 0.73 Å < 2×误差），c→0 外推与直接值一致（24.65 vs 24.43 Å）。
 
 边界：两峰之间**谷底没回到基线** = 未解析重叠，转 `deconvolve-overlapping-elution-peaks`（SVD/EFA/REGALS），
 不要在流水线里硬切区间。

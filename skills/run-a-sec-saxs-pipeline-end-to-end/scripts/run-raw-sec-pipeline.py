@@ -101,8 +101,14 @@ try:
 except Exception:                                     # pragma: no cover
     sp = None
 
+# 峰内梯度：把一条洗脱峰的不同位置当**稀释序列**（Rg/MW 的浓度依赖 + c→0 外推）
+try:
+    import sec_gradient as sg
+except Exception:                                     # pragma: no cover
+    sg = None
+
 FMT = argparse.ArgumentDefaultsHelpFormatter
-STEPS = ["integrate", "peaks", "series", "guinier", "ift", "mw", "shape", "report"]
+STEPS = ["integrate", "peaks", "series", "guinier", "gradient", "ift", "mw", "shape", "report"]
 
 
 def log(msg):
@@ -692,6 +698,55 @@ def detect_and_report(profiles, series, st, out, prefix, args):
     return det
 
 
+def step_gradient(series, st, out, prefix, det, peak, qrange, args):
+    """峰内梯度：把这条洗脱峰的不同位置当**稀释序列**。
+
+    峰顶最浓、两翼渐稀 → 同一批样品、同一 buffer 下天然得到一条 c 递减序列。
+    于是可以看 Rg/MW 的浓度依赖、外推 c→0、并做"上升翼 vs 下降翼"互检。
+    全程 RAW：``set_sample_range`` + ``guinier_fit``（**所有切片共用同一条 q 区间**）。
+    """
+    if sg is None:
+        log("  ！跳过峰内梯度：同目录的 sec_gradient.py 没 import 成功")
+        return None, []
+    if det is None:
+        log("  ！跳过峰内梯度：没有认峰结果（峰窗从哪来）")
+        return None, []
+    if peak is None:
+        # 单峰路径（没走逐峰子目录）：用认到的第一个峰当切片来源
+        if not det.get("peaks"):
+            log("  ！跳过峰内梯度：认峰结果里没有可用的峰窗")
+            return None, []
+        peak = det["peaks"][0]
+        log(f"  （单峰路径：用认到的 P1 apex 帧 {peak['apex']}、窗 {peak['window']} 当切片来源）")
+    log("")
+    log(f"=== 峰内梯度（稀释序列）P{peak['index']+1}：{args.gradient_slices} 个切片，口径 {args.gradient_mode} ===")
+    slices = sg.slices_for_peak(det, peak, n=args.gradient_slices, mode=args.gradient_mode,
+                                min_frames=args.gradient_min_frames,
+                                min_conc=args.gradient_min_conc)
+    if not slices:
+        log("  ！没有可用切片（峰窗太窄或全部稀于 min-conc）→ 跳过")
+        return None, []
+    cs = [s["conc_rel"] for s in slices]
+    log(f"  切片 {len(slices)} 个：相对浓度 {min(cs):.2f}–{max(cs):.2f}"
+        f"（{'共用同一 q 区间 %.4f–%.4f 1/A' % qrange if qrange else '各切片 auto 取点（不推荐，Rg 差异会混入取点差异）'}）")
+    rows = sg.analyze_slices(series, st, slices, raw, qrange=qrange)
+    for r in rows:
+        if "error" in r:
+            log(f"    {r['label']:>12}（{r['side']}）c={r['conc_rel']:.2f}  ✗ {r['error']}")
+        else:
+            log(f"    {r['label']:>12}（{r['side']}）c={r['conc_rel']:.2f} 帧{r['window'][0]}-{r['window'][1]}"
+                f"  Rg={r['rg']:6.2f}±{r['rg_err']:.2f} Å  I0={r['i0']:9.3g}  qRg={r['qrg_min']:.2f}-{r['qrg_max']:.2f}"
+                f"  r²={r['r2']:.4f}" + (f"  MW(Vc)={r['mw_vc']:.1f}" if r.get("mw_vc") else ""))
+    stats = sg.gradient_stats(rows)
+    flank = sg.flank_consistency(rows)
+    lines = sg.write_gradient(out, rows, stats, flank, prefix)
+    log(f"  判定：{stats.get('verdict')} —— {stats.get('reason', '')}")
+    if flank:
+        log(f"  两翼互检：{flank['msg']}")
+    log(f"  → gradient/gradient_slices.csv、gradient.json、gradient.png")
+    return stats, lines
+
+
 def run_downstream(profiles, series, sample_profile, out, prefix, args, st, steps,
                    det=None, peak=None):
     """一个样品（或**一个峰**）在 ``out`` 里跑完下游并落盘 meta + README。
@@ -702,6 +757,26 @@ def run_downstream(profiles, series, sample_profile, out, prefix, args, st, step
     ift = dmax = denss_ift_obj = None
     if "guinier" in steps and sample_profile is not None:
         rows_g, report_profiles = step_guinier(sample_profile, st, out, args)
+    # 峰内梯度（稀释序列）：紧跟 Guinier —— 要用主分析"采用的那条 q 区间"当所有切片的公共区间
+    grad_lines = []
+    if "gradient" in steps and series is not None and str(getattr(args, "gradient", "auto")) != "off":
+        qr = None
+        if str(getattr(args, "gradient_q", "auto")).lower() in ("", "auto", "none"):
+            for r in rows_g or []:
+                if r and r[0] == "auto":
+                    qr = (float(r[5]), float(r[6]))
+                    break
+            if qr and not (qr[1] > qr[0]):
+                qr = None
+        else:
+            try:
+                qr = tuple(float(x) for x in str(args.gradient_q).split(","))
+            except ValueError:
+                log(f"  ！--gradient-q 解析不了（{args.gradient_q}）→ 改用各切片 auto 取点")
+        try:
+            _, grad_lines = step_gradient(series, st, out, prefix, det, peak, qr, args)
+        except Exception as exc:
+            log(f"  ！峰内梯度失败：{type(exc).__name__}: {exc}")
     if "ift" in steps and sample_profile is not None:
         ift, ifts, rows_i, dmax, denss_ift_obj = step_ift(sample_profile, st, out, prefix,
                                                           args.atsas_dir, args.ift_dmax)
@@ -745,6 +820,19 @@ def run_downstream(profiles, series, sample_profile, out, prefix, args, st, step
     try:
         p, n_keys = write_results_readme(out, "sec", getattr(args, "readme_script", None))
         log(f"  → 结果说明：{os.path.relpath(p, out)}（先看这份，再看其它文件；{n_keys} 条关键数字）")
+        if grad_lines:
+            # 梯度节是**本管线特有**的（共享模板没有这一节）→ 生成后追写，不碰模板本身
+            try:
+                with open(p, "a") as fh:
+                    fh.write("\n## 8. 峰内梯度（把峰内不同位置当稀释序列）\n\n"
+                             "峰顶最浓、两翼渐稀 → 同一条峰天然是一条 c 递减序列（同一 buffer、同一批样品，"
+                             "不需要另配样品）。所有切片都走 RAW 的 `set_sample_range` + `guinier_fit`，"
+                             "并**共用同一条 q 区间**（否则 Rg 差异会混入取点差异）；浓度是**相对**浓度"
+                             "（扣减后低 q 窗口积分 / 峰顶值）——SEC 的绝对浓度未知，外推只看相对标度。\n\n"
+                             + "\n".join(grad_lines) + "\n")
+                log("  → README 追加第 8 节：峰内梯度")
+            except Exception as exc:
+                log(f"  ！README 追写梯度节失败：{type(exc).__name__}: {exc}")
     except Exception as exc:
         log(f"  ！README.md 未生成：{type(exc).__name__}: {exc}")
     return shape_rows, rows_g, rows_i, dmax, sample_profile
@@ -777,6 +865,23 @@ def combine_per_peak_params(per_peak, n):
         out["mw"][f"Vc {lab}"] = place(item["vc"], a, b)
         out["mw"][f"Vp {lab}"] = place(item["vp"], a, b)
     return out
+
+
+def read_gradient_verdict(pdir):
+    """从峰子目录的 gradient/gradient.json 里取峰内梯度的判词（只读产物，不重算）。"""
+    path = os.path.join(pdir, "gradient", "gradient.json")
+    if not os.path.exists(path):
+        return "—"
+    try:
+        with open(path) as fh:
+            st = json.load(fh).get("stats", {})
+        v = st.get("verdict") or "—"
+        if st.get("rg0") is not None and st.get("slope") is not None:
+            return (f"{v}；c→0 Rg={float(st['rg0']):.1f}±{float(st.get('rg0_err') or 0):.1f} Å"
+                    f"（{st.get('n_used', '?')} 切片）")
+        return v
+    except Exception:
+        return "—"
 
 
 def read_mw_vc(pdir):
@@ -877,8 +982,8 @@ def run_per_peak(profiles, series, st, out, prefix, det, args, steps):
              "· 子目录里的 `profiles/01_integrated` 是**相对符号链接**（同一份积分结果，不重复占盘）。",
              "",
              "## 4. 每个峰一行速览", "",
-             "| 峰 | 子目录 | 主拟合 Rg (Å) | MW (Vc, kDa) | 形状重建 |",
-             "|---|---|---|---|---|"]
+             "| 峰 | 子目录 | 主拟合 Rg (Å) | MW (Vc, kDa) | 形状重建 | 峰内梯度（稀释序列） |",
+             "|---|---|---|---|---|---|"]
     for p, shape_rows, rows_g, rows_i, dmax in summary:
         rg = ''
         for r in rows_g or []:
@@ -893,7 +998,8 @@ def run_per_peak(profiles, series, st, out, prefix, det, args, steps):
         if (shape_rows or {}).get("damaver"):
             shape.append("DAMAVER ✓")
         extra.append(f"| **P{p['index']+1}** | `{p['subdir']}` | {rg or '—'} | "
-                     f"{('%.0f' % mwv) if mwv else '—'} | {'、'.join(shape) or '—'} |")
+                     f"{('%.0f' % mwv) if mwv else '—'} | {'、'.join(shape) or '—'} | "
+                     f"{read_gradient_verdict(os.path.join(out, p.get('subdir', '')))} |")
     if det.get("visual_check_reasons"):
         extra += ["", "## 5. 看图之前别引用数字", "",
                   "自动判定触发了下面这些条件（见 `series/sec_peaks.png` 与 "
@@ -981,6 +1087,21 @@ def main():
                          "主导，实测能让 1500 帧里只有 69 个散落噪声帧被标记 → 逐帧参数全 -1）；"
                          "这里默认用低 q 窗口积分强度 'qlo,qhi'（1/A，与认峰同一窗口，抗漂移）。"
                          "传 none 回到 RAW 默认的总强度口径")
+    # ---- 峰内梯度（把一条洗脱峰的不同位置当稀释序列）
+    ap.add_argument("--gradient", choices=["auto", "off", "always"], default="auto",
+                    help="峰内梯度：把峰内不同位置当**稀释序列**（峰顶最浓、两翼渐稀）→ Rg/MW 的浓度依赖、"
+                         "c→0 外推、上升/下降两翼互检。auto=有峰窗就跑（默认）；off=不做")
+    ap.add_argument("--gradient-slices", type=int, default=(sg.DEF_N_SLICES if sg else 5),
+                    help="切几个浓度切片")
+    ap.add_argument("--gradient-mode", choices=["frames", "height"], default=(sg.DEF_MODE if sg else "frames"),
+                    help="frames=峰窗内**连续**帧块（块内组分几乎不变，默认）；height=按相对峰高分带")
+    ap.add_argument("--gradient-min-frames", type=int, default=(sg.DEF_MIN_FRAMES if sg else 3),
+                    help="一个切片至少几帧（太少 Rg 不可靠）")
+    ap.add_argument("--gradient-min-conc", type=float, default=(sg.DEF_MIN_CONC if sg else 0.08),
+                    help="相对浓度下限：更稀的切片信噪撑不住 Rg，直接不取")
+    ap.add_argument("--gradient-q", default="auto",
+                    help="所有切片共用的 q 区间 'qlo,qhi'；auto=沿用主分析 auto 区间（默认）。"
+                         "**必须共用**，否则 Rg 差异会变成取点差异")
     ap.add_argument("--peak-q-range", default=None,
                     help="色谱图取的 q 窗口 'qlo,qhi'（1/A），默认 %g,%g——低 q 对组分敏感、"
                          "高 q 对噪声敏感" % sp.DEF_Q_RANGE if sp else "")

@@ -1,6 +1,6 @@
 {
   "skill": "run-a-sec-saxs-pipeline-end-to-end",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "test_cases": [
     {
       "id": "should-trigger-01",
@@ -64,6 +64,13 @@
       "prompt": "SEC 色谱图上那两个峰离得太近，中间谷底根本没回到基线，怎么把它们分开成两条曲线？",
       "expected_behavior": "走 deconvolve-overlapping-elution-peaks（SVD/EFA/REGALS 分解，判据是组分数与浓度曲线）；不是本 skill 的多峰切区间——未解析重叠硬切只会把两条曲线一起弄脏。",
       "notes": "诱饵类型：同样是「多峰」，但边界在「峰之间有基线」这个前提上。"
+    },
+    {
+      "id": "should-trigger-06",
+      "type": "should_trigger",
+      "prompt": "这条 SEC 洗脱峰我想拿峰内不同位置当稀释序列用：看 Rg 随浓度变不变、顺便外推到零浓度，流程能直接给我吗？",
+      "expected_behavior": "答：能。--gradient（默认开）把峰窗切成若干连续帧块（frames 口径），每块走 RAW 的 set_sample_range + guinier_fit，**所有切片共用同一条 q 区间**（否则 Rg 差异混入取点差异）；出 gradient/gradient_slices.csv + gradient.png（峰上切片位置 / Rg vs c 带 c→0 外推 / MW 与 I(0) vs c）与 README 第 8 节。判词三档：无浓度依赖 / 随浓度升或降 / 不可判；另有上升翼-下降翼互检。浓度是相对浓度（SEC 绝对浓度未知）。",
+      "notes": "正面场景：峰内梯度（稀释序列）——本轮新增能力。"
     }
   ]
 }
