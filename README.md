@@ -29,6 +29,17 @@
 > 3×MEDIUM execution on `subprocess`），因此按既有先例用 `--force` 安装。命中项的实质是**本机可执行文件调用**
 > （ATSAS `cifsup`、ChimeraX、PyMOL），无网络、无外发；安装后 `diff -rq` 与仓库逐字节一致。
 
+安装记录（pin = 安装时仓库的 commit，`hermes skills check` 用它对账）：
+
+| skill | 安装 pin | scan verdict | 安装时内容哈希 |
+|---|---|---|---|
+| `assess-saxs-raw-data-quality` | `eff1219` | safe | `sha256:a9d3d37700dc7b9f` |
+| `run-a-sec-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:ba05a23c0de5b5ee` |
+| `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
+| `write-saxs-results-readme` | `4fd536d` | safe | `sha256:ab75c5c7bb9c186c` |
+| `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
+| `compare-model-curve-with-existing-fits` | `8f3fd26` | caution | `sha256:fef50a862f8dfd97` |
+
 ## 索引
 
 | skill | 用途 | 可执行入口 |
