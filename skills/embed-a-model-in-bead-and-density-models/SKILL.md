@@ -98,10 +98,10 @@ related_skills:
 | 这个重建本身能不能用（a-score/NSD/簇/χ²/Rg/MW 七条判据） | `evaluate-a-shape-reconstruction` |
 | 曲线→P(r)→珠模型系综怎么建 | `run-a-tube-saxs-pipeline-end-to-end` / `run-a-sec-saxs-pipeline-end-to-end`（本 skill 只在珠模型**不存在**时才代建，且按上游判据取用可信 q 窗口） |
 
-### 交付物（每个样品一个 `embed/` 目录）
+### 交付物（每个样品一个 `_embed/<样品>/` 目录——**不要放进样品目录里**）
 
 ```
-embed/
+<processed>/_embed/<样品>/
   bead/                         GNOM .out + DAMMIF xN + DAMAVER 共识模型（若本次代建）
   A5_in_beads.pdb / .cif        CIFSUP 叠好的模型（在珠模型坐标系里）+ 文件头里的 score
   cifsup_<sel>.log              CIFSUP 的 stdout（对 CIFSUP 来说永远是空的，见 B）
@@ -109,8 +109,12 @@ embed/
   fitmap_r<RR>.csv              fitmap 全部唯一解的矩阵与四个分数
   fitmap_r<RR>.log              ChimeraX 日志（含 Top 相关值列表与矩阵）
   embed_results.json            上面所有数字的机器可读版（含 warning/ambiguity）
-  embed_beads.png / embed_density.png   两张分坐标系的图（PyMOL 渲，见 B）
+  A5_in_beads.png / A5_in_density.png   两张分坐标系的图（PyMOL 渲，见 B）
 ```
+
+**为什么在样品目录之外**：上游流水线（`run-a-tube-…` / `run-a-sec-…`）**重跑时会重建整个样品目录**，
+放进 `<样品>/embed/` 的产物会被下一次重跑删掉（2026-10-01 实测：一批已在 `<样品>/embed/` 跑好的结果
+被并发会话的流水线重跑清空）。放同级 `_embed/<样品>/`（与 `_summary/` `_logs/` `_rawqc/` 同层）才活得下来。
 
 ## A1 — 案例 (Past Application)
 
@@ -191,7 +195,7 @@ embed/
    完成标准：给出"最大散布 X Å + 对应的 R + 分数差"。判停点：散布 > 5 Å 且分数接近（实测 28.9 Å / 差 0.004）→ 结论必须写成"至少两个分数相当的不同摆法"，并说明 SAXS 包络本身不唯一。
 8. **出图（两张）。** 珠模型坐标系一张（模型 + 珠球）、电子云坐标系一张（模型 + isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。珠球记得给透明度，否则蛋白全被遮住。
    完成标准：两张 png 里模型都在包络内/内缘，且没有把两个坐标系画进同一张图。
-9. **落盘并交付。** 每个样品一个 `embed/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figure`）、叠好的 PDB/CIF、fitmap CSV、两张图；再写一份人看的 `README.md`。
+9. **落盘并交付。** 每个样品一个 `_embed/<样品>/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figure`）、叠好的 PDB/CIF、fitmap CSV、两张图；再写一份人看的 `README.md`。
    完成标准：别人只拿这些文件就能复述"用的哪条 q 窗口、哪个 selection、哪个 resolution、分数是多少、有没有第二个解"。
 
 ## B — 边界 (Boundary)

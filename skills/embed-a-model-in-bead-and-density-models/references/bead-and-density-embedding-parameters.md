@@ -18,6 +18,15 @@ A5-05-1…6 的实跑数字。**所有数字都是本机实跑得到的**，不�
 | `<样品>/models/*dammif*` `*damaver*` `*damfilt*` | 若上游已跑过珠模型，**珠模型靶子**在这里；本次 A5 批没有（`shape.dammif` 当年写的是 "not run"），所以是代建 |
 | `models/*.pdb`（**项目根**，不是样品目录） | 高分辨模型（本次：`/…/DataProcess_2026.10.01/models/A5.pdb`） |
 
+**两条与"产物寿命"有关的实测**（2026-10-01）：
+
+- **样品目录会被上游流水线重跑清空**：同一批数据常有并发会话在重跑 `run-raw-tube-pipeline.py`，它重建整个
+  `<样品>/` 目录——把结果写进 `<样品>/embed/` 会被下一次重跑删掉。**默认输出目录因此改成同级
+  `<processed>/_embed/<样品>/`**（`--out-dir` 可覆盖）。
+- **上游自己也会建珠模型**：流水线带 `--model-engine auto` 时会在 `<样品>/models/` 写下
+  `damaver-cluster001-damfilt.cif` 等；本 skill 检测到就直接**复用**（优先 `*damfilt*`＝滤过平均＝最可能模型，
+  其次 `*damaver*`），不再重建。注意别把两个 glob 合并成一次 `sorted()`——那样 `damaver` 会排在 `damfilt` 前面。
+
 `read_sample_meta()` 的取用顺序：`tables/ift_summary.json` → `summary.json`；只取 `chosen` 那条 run，
 优先 `trusted=true`。**不要**自己另选 q 窗口——那会把上游判据废掉（见 §5 的对照实测）。
 
