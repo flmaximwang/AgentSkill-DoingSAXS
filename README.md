@@ -11,7 +11,8 @@
 **先量几何（中心/掩膜/q_min）→ 逐帧 QC → 扣减后形状 → 低 q 上翘归因（空白-空白 / 背景形状失配 / 2D 差分）→ 完整结论（排除了什么、还剩什么、下一步做什么实验）**。
 它**不做任何拟合**：拟合归 `AgentSkill-UsingBioXTASRAW` 的 15 个 skill，这里只判"那些拟合肥不肥"。
 
-> **状态**：本地仓库已建、已提交；**尚未 push 到 GitHub、尚未安装进任何 profile**（等确认）。
+> **状态**：已 push 到 <https://github.com/flmaximwang/AgentSkill-DoingSAXS>（**public**，远程用 SSH，default=main）；
+> 已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，scan verdict **SAFE**，pin `eff1219`）。
 
 ## 索引
 
