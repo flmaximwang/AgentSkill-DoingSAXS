@@ -76,6 +76,19 @@ metadata:
 
 ## 执行步骤
 
+## 🔴 STOP 闸门（这六处**不确认就别往下走**）
+
+> 每条闸门都要在报告里留下"确认了什么"。跳过闸门的产物**不允许**被引用为结果。
+
+| 闸门 | 在哪一步 | 必须确认什么（看哪个文件） | 不满足就停在这里做什么 |
+|---|---|---|---|
+| 🔴 STOP 1 | Step 1 之前（+ Step 0） | 线站给了什么：逐帧 `<帧名>.txt` / 只有 `.Iochamber`+`.log` / 两者都没有（`ls` 计数 + `head` 看头） | 两者都没有 → **问用户**是否接受"未归一化"跑（`--no-header-normalization`）；不要在用户不知道的情况下出一份没归一化的 I(0) |
+| 🔴 STOP 2 | Step 3 认峰之后（多峰 2） | `series/sec_peaks.png` + `tables/sec_peaks.csv`：几个峰、每个峰窗与 buffer 落在哪、`visual_check_reasons` 是否非空 | 非空 → **先按眼看四问复核**或 `--peak-ranges/--peak-buffers` 覆盖后重跑，再引用任何数字 |
+| 🔴 STOP 3 | Step 3 buffer 定完之后 | 日志里 `buffer 两侧水平差 ≥0.15×主峰` 是否出现 | 出现 → 先决定 `--baseline linear/integral` 还是换 buffer 段；带着斜漂移做扣减，Rg 会随取点乱跳 |
+| 🔴 STOP 4 | 每个峰的结果出来之后 | `tables/guinier_multi_range.csv` + `ift_summary.csv` + `mw.csv`：Rg < 5 Å / `r²` < 0 / Vp 为负 / 逐帧 Rg 在几埃到几十埃乱跳 | 命中任一 → 按**数据问题**处理：写 `结果不可用-README.md`（数据事实 + 试过的区间对照 + 三重证据），不要把表里的数字当结果 |
+| 🔴 STOP 5 | `shape` 步之前 | 每条曲线的 χ²（DENSS `*_stats_by_step.dat` / DAMMIF `.fir` 第 1 行） | χ² > 5（或 DENSS 起不了样条）→ **先在曲线上找原因**（裁 q/换 buffer/评估数据），别在重建参数里找答案 |
+| 🔴 STOP 6 | 交付前（`report` 步之后） | `<产物根>/README.md`（8 节 + 第 8 节峰内梯度）与 `run_meta.json` 时间戳**必须比数据新**；用了兜底的，逐条写在"没做的/不能信的" | 时间戳比数据旧 → 用 `write-readme.py <目录>` 重写；兜底没写 → 补齐后再给用户 |
+
 ### Step 0 — 前置核对
 
 > **失败分支**：`import bioxtasraw` 报 `ImportError: sascalc_exts` → 你站在 RAW 源码目录里，换目录跑（见下面第 13 条）；
@@ -86,6 +99,9 @@ metadata:
 - 核对该会话的 `.cfg`（定心/距离/掩膜/标样）→ `configure-bioxtas-raw-for-a-dataset`。
 
 ### Step 1 — 逐帧 header txt：**先看线站给了什么**，再决定生成还是不生成
+
+🔴 **STOP 1 就在这里**（三种来源先数清楚：逐帧 txt / 只有监视器+日志 / 都没有）——
+都没有时要用户点头才用 `--no-header-normalization`。
 
 **1a. 线站已给逐帧 txt（`tif` 旁边就有 `<帧名>.txt`）→ 只读因子，不重生成：**
 
@@ -137,6 +153,9 @@ python crop-video-normalized.py --series-dir <tif 目录> --norm-csv <out>/norm/
 
 ### Step 3 — RAW 端到端（`run-raw-sec-pipeline.py`）
 
+🔴 **STOP 2 / STOP 3 在这一步**：认峰后先看 `series/sec_peaks.png` 再引用任何数字；日志出现
+`buffer 两侧水平差 ≥0.15×主峰` 时先决定 `--baseline` 还是换 buffer 段。
+
 ```bash
 python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> --cfg <日期>.cfg \
   [--steps integrate,peaks,series,guinier,ift,mw,shape,report] \
@@ -179,6 +198,9 @@ DENSS 是 RAW 原生（numba），`Fast` 模式实测几秒到几十秒就出；
 表里给全 `Rg / I0 / rg_err / i0_err / q_min / q_max / qRg_min / qRg_max / r²`，据此判断"哪段才合适"。
 
 ### Step 4 — 结果目录里的 `README.md`（交给 `write-saxs-results-readme`）
+
+🔴 **STOP 4 / STOP 5 在 Step 3 与 Step 4 之间**：每条曲线的 χ² > 5 就先回去看曲线（别调重建参数）；
+`Rg < 5 Å` / `r² < 0` / `Vp` 为负 → 写 `结果不可用-README.md`，别让表里的数字被当结果引用。
 
 管线**最后一步自动**调用隔壁技能 `write-saxs-results-readme` 的 `readme_common.write_readme(out, "sec")`
 写 `<产物根>/README.md`：只读产物（`run_meta.json` / `tables/*.csv` / `series/ranges.json` / `models/` 清单），
