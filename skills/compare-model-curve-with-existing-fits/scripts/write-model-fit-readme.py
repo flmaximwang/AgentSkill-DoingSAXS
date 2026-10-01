@@ -48,10 +48,11 @@ def main() -> int:
 
     # ---- 结论速览
     L.append("## 结论速览\n")
-    if bad:
-        L.append(f"> 🟡 **需要警惕**：{len(bad)} 条曲线离实验曲线太远（{bad[0]['label']} "
-                 f"red.χ²={fmt(bad[0].get('primary_chi2'))}）——它们不是「算错了」，"
-                 f"是这套结构/重建不解释这条曲线。\n")
+    ranked_bad = [c for c in bad if not c.get("ranking_excluded")]
+    if ranked_bad:
+        L.append(f"> 🟡 **需要警惕**：{len(ranked_bad)} 条参与排序的曲线离实验曲线太远"
+                 f"（{ranked_bad[0]['label']} χ²={fmt(ranked_bad[0].get('primary_chi2'))}）"
+                 f"——它们不是「算错了」，是这套结构/重建不解释这条曲线。\n")
     if failed:
         L.append(f"> 🔴 **有 {len(failed)} 个模型没算出来**："
                  + "；".join(f"{c['label']}（{c.get('error')}）" for c in failed) + "\n")

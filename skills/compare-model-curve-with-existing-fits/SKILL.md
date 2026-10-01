@@ -180,13 +180,22 @@ related_skills:
    完成标准：能说出这条曲线的可用 q 区间（从数据 QC / Guinier 判据来）。🔴 STOP-1：低 q 有未裁掉的光晕/聚集 → 下一步给 `--qmin`，别指望拟合掩盖它。
 3. **定模型与分子状态。** 单体还是二聚体？多链 `.cif` 要不要只取一条链（`--chain`）？有没有只有水的链？
    完成标准：能说出"我要算的是哪个组装态、文件里是哪几条链"。🔴 STOP-2：crysol 报 `No such model or chain in structure` → 先检查该文件里到底有没有原子。
-4. **跑一次（一条命令）。**
+4. **跑一次（一条命令，可直接粘）。** 脚本路径 = 本 skill 目录下的 `scripts/model-vs-fit.py`（装好的副本在 `~/.hermes/skills/saxs/compare-model-curve-with-existing-fits/scripts/`，仓库副本在 `~/Repositories/AgentSkill-DoingSAXS/skills/compare-model-curve-with-existing-fits/scripts/`）；解释器必须用 RAW 自带那只（有 numpy/scipy/matplotlib）。
    ```bash
-   /Applications/BioXTASRAW/bin/python skills/compare-model-curve-with-existing-fits/scripts/model-vs-fit.py \
-     --model <模型.cif|pdb> [--model <第二个>…] --data <曲线.dat> \
-     [--processed <processed/<模式>/<样品>>] [--qmin Q --qmax Q] --out <产物目录>
+   /Applications/BioXTASRAW/bin/python <skill>/scripts/model-vs-fit.py \
+     --model /abs/模型.cif --model /abs/第二个.pdb \
+     --data /abs/曲线.dat --processed /abs/processed/<模式>/<样品> \
+     --atsas-dir /Applications/ATSAS-4.1.4-1/bin --qmin 0.0067 --qmax 0.2592 --out /abs/产物目录
    ```
-   （解释器用 RAW 自带的那只 `/Applications/BioXTASRAW/bin/python`；`--help` 里有全部参数与默认值。）
+   实测的控制台输出（本机 SEC 样例，逐行就是判据）：
+   ```
+   [data] …/data_used.dat  N=1150  q=0.00643–0.45386 Å⁻¹
+   [crysol] 4DH2-676-apo-dimer: χ²(程序)=1.267 χ²(datcmp)=1.267 → 🟡
+   [已有] DENSS 电子云: …_denss_map: χ²(datcmp)=2.668 → 🔴
+   [已有] DAMMIF 珠模: …_dammif_01: χ²(datcmp)=4.334 → 🔴
+   [plot] OK …/model-vs-fit.png      [readme] OK …/README.md      [best] …
+   ```
+   `--help` 里有全部参数与默认值（默认 `--constant` 开、`--lm=20`、`--smax` 用 crysol 默认 0.5）。
    完成标准：`crysol/<模型>/` 下出现 `.fit`/`.log`/`.int`/`.abs`，控制台打印每个模型与每条已有拟合的判据 χ²。🔴 STOP-2：模型全部失败 → 看 `crysol.stdout.txt`（常见：只有水/未知元素/氢原子数）再决定换文件还是加 `--explicit-hydrogens`。
 5. **读三列 χ²，别混用。** 程序自报（各家分母不同）／`datcmp`（统一口径，**判决用这列**）／同网格重算（只在 `regridded=false` 时才与 datcmp 同级；标"重采样"的只作参考）。
    完成标准：能说出"我判决用的是哪一列、为什么"。
@@ -196,7 +205,8 @@ related_skills:
    完成标准：能指出残差偏在哪个 q 区间、对应哪种物理原因。
 8. **换口径复核（可选但便宜）。** 加 `--no-constant` 再跑一次（看缓冲液失配量级）；给 `--qmin/--qmax` 裁到干净区再跑一次（看低 q 污染的影响）。
    完成标准：两次运行的判据 χ² 差值能解释（常数项贡献 / 低 q 污染贡献）。
-9. **交付。** 产物目录里 `comparison.csv`（每行一条曲线：三列 χ²、CorMap、判据、判档）、`comparison.json`（含完整参数与复现命令）、`model-vs-fit.png`、`fits/`（拷贝过来的拟合文件）、`README.md`（分点总结 + 明细表 + 🟢🟡🔴 + 没做的）。
+9. **交付。** 产物目录里 `comparison.csv`（每行一条曲线：三列 χ²、CorMap、判据、判档）、`comparison.json`（含完整参数与复现命令）、`model-vs-fit.png`、`fits/`（拷贝过来的拟合文件）、`README.md`（分点总结 + 明细表 + 🟢🟡🔴 + 没做的）。两条生成规则：①顶部「需要警惕」只统计**参与排序**的曲线（口径不同而被排除的 IFT 行单独在明细表里标「只作参考」），不许把两类混在一个计数里；②每条曲线的「判据 χ²」必须写明口径来源（datcmp / 同网格 / 程序自报），读者据此才能知道这一列为什么可以横着比。
+   **给用户的回答写成三段式**（结论先行，≤5 句）：① 判据 χ² 是多少、什么口径、落在哪一档；② 与已有拟合的横向位次（谁最小、差多少）；③ 排除了什么、还剩什么、下一步做什么 —— 不许只甩一张表。
    🔴 STOP-6：交付前逐项核对 README 的「这次没做的 / 不能信的」。完成标准：别人只看 `README.md` 就能复述结论、并知道每个数字的口径。
 
 ## 🔴 停点（CHECKPOINT / STOP）
