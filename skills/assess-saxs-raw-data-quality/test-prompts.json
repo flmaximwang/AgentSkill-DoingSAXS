@@ -1,0 +1,76 @@
+{
+  "skill": "assess-saxs-raw-data-quality",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "这批新收的管式 SAXS 数据，哪些样品能用哪些该扔？帮我评估一下原始数据的好坏。",
+      "expected_behavior": "跑 raw-qc-frames.py：逐帧稳定性（run 内漂移/帧间起伏/离群帧，q=0.2 那套判据）、低 q 对比度、单帧 SNR≥2 的 q 上限、control 缩放因子、误差诚实度；结论按 RULES 阈值分档（好/可用/勉强可用/不可用）并给数字+理由，产物 _rawqc/raw_quality.{md,csv} + 每样品 qc.json + plot-frame-stability.py 的图。",
+      "notes": "正面场景：本 skill 的主入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "老师看了扣减后的曲线，说低 q 都有明显上翘，像是蛋白相互作用，你同意吗？",
+      "expected_behavior": "不要直接同意或否认。先看浓度标度律（稀释让真信号变小、让固定背景残留相对变大），再按顺序做三道检验：空白-空白（背景能造出的 counts 上限）、背景形状失配 shape×电平、2D 差分（各向同性光晕=真散射；紧贴 beamstop 的窄亮环=边缘假信号）；并指出这条 AB 系列里 75-80% 的上翘来自 q≈0.0064 那一个点（该处只有 38% 的环未被遮挡），砍到 q≥0.010 后剩的部分不随浓度变化 → 用这批数据判不了相互作用，要另做浓度序列取 A2。",
+      "notes": "正面场景：本 skill 的第二入口，最容易被误答成'对，是相互作用'。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "低 q 那个点上翘得厉害，我把它砍掉重拟合合不合规？砍到哪？",
+      "expected_behavior": "答：合规且推荐——但要先量几何：beamstop 挡到 r≤12 px、r=16 px 只有 38% 环可用、r≈25 px（q≈0.010）才到 75%；所以 q_min 取 0.010（换算依据 q=4π sin(atan(r·px/D)/2)/λ）。同时提醒：砍完还要看 2D 差分确认多余强度不是铺开的光晕，报告里必须写明 q_min 与依据。",
+      "notes": "正面场景：几何→q_min 的可检验链路。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "我想知道这批数据里背景到底稳不稳、能不能用一根控制样代表一整轮。",
+      "expected_behavior": "跑 blank-reproducibility.py：不缩放地看 r(q)=A/B 从定标窗到最低 q 的 shape；本机实测空白-空白 shape ≤1.2%（≈12 counts），而个别 control run（ddh2o_0020 漂 7.5%、pb7_0011 −7.4%）在 run 内就不稳 → 点名到文件名，建议整条剔除或按 run 分别定标。",
+      "notes": "正面场景：背景可复现性检验。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "下个月上机，样品不太够，control 我该怎么排？",
+      "expected_behavior": "答：同一根毛细管、同一位置做 buffer→样品→buffer 夹心，每个样品两侧各一组；正相互作用方案要给 A2 就必须做 5-8 个浓度、每浓度重复 2-3 次；并在采集时就记下 q_min 依据（beamstop 半径）与每个 run 的编号，方便事后按 run 剔除。",
+      "notes": "正面场景：把评估经验前移到实验设计。"
+    },
+    {
+      "id": "should-trigger-06",
+      "type": "should_trigger",
+      "prompt": "拟合出来 Rg 随浓度乱漂，Dmax 也忽大忽小，是数据问题还是我拟合的问题？",
+      "expected_behavior": "先回到原始帧定性：逐帧 QC 看漂移/离群/对比度，再看扣减后的形状（单调性、Kratky、I(0)/I(0.2) 分型），并按归因协议判断低 q 有多少是背景/边缘假信号；把'扣减残留'与'拟合参数选择'分开陈述，别把数据问题当成算法问题（也不要反过来）。",
+      "notes": "正面场景：数据问题 vs 拟合问题的分流。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "把 /data/Tube-SAXS/A5-05-6 端到端跑一遍，我要常规参数、拟合图、bead model，全程用 RAW，各节点 profile 都给我 dat。",
+      "expected_behavior": "应路由到 run-a-tube-saxs-pipeline-end-to-end（本 skill 不做拟合、不出重建）。",
+      "notes": "诱饵：端到端流水线。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "这条 Guinier 拟合的 q 区间怎么取、qRg 到多少还能信？",
+      "expected_behavior": "应路由到 assess-guinier-fit-quality（判据 skill）。",
+      "notes": "诱饵：Guinier 取点判据。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "帮我算 P(r) 并定 Dmax，用 GNOM 还是 BIFT？",
+      "expected_behavior": "应路由到 compute-and-validate-p-of-r。",
+      "notes": "诱饵：IFT/P(r) 方法选择。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "这条蛋白的浓度是多少？用 UV 和 SAXS 哪个定分子量更靠谱？",
+      "expected_behavior": "应路由到 choose-a-molecular-weight-method（本 skill 只判原始帧能否支撑拟合，不选 MW 方法）。",
+      "notes": "诱饵：MW 方法选择。"
+    }
+  ]
+}
