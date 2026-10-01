@@ -1,6 +1,6 @@
 {
   "skill": "run-a-sec-saxs-pipeline-end-to-end",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "test_cases": [
     {
       "id": "should-trigger-01",
@@ -50,6 +50,20 @@
       "prompt": "重建出来的珠子模型有一堆模型被剃掉了，平均 NSD 0.8 算好吗？",
       "expected_behavior": "走 evaluate-a-shape-reconstruction（重建评估判据）。",
       "notes": "诱饵类型：珠模是流水线的末端，但'能不能用'的判据归那条。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "这条 SEC-SAXS 系列我看色谱图上有两个洗脱峰，现在跑出来只有一条曲线——第二个峰也想要一套完整结果，怎么弄？",
+      "expected_behavior": "答：RAW 自己只认最大的那个峰（SASCalc.findSampleRange 里 argmax），所以第二个峰被静默丢了。用 run-raw-sec-pipeline.py 的 --multi-peak auto（默认）：认峰后 ≥2 个峰就逐峰建 peaks/peakNN_apexNNNNN/ 子目录，每个峰用自己的前置+后置两段 buffer 与峰窗重跑扣减、Guinier/IFT/MW/形状重建，各自出 README；顶层 README 是索引。先 --steps integrate,peaks（约 85 s / 1500 帧）出 series/sec_peaks.png 人为复核，需要时用 find-sec-peaks.py --sweep 挑阈值或 --peak-ranges 覆盖。",
+      "notes": "正面场景：本次新增的多峰入口（用户报的缺陷）。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "SEC 色谱图上那两个峰离得太近，中间谷底根本没回到基线，怎么把它们分开成两条曲线？",
+      "expected_behavior": "走 deconvolve-overlapping-elution-peaks（SVD/EFA/REGALS 分解，判据是组分数与浓度曲线）；不是本 skill 的多峰切区间——未解析重叠硬切只会把两条曲线一起弄脏。",
+      "notes": "诱饵类型：同样是「多峰」，但边界在「峰之间有基线」这个前提上。"
     }
   ]
 }

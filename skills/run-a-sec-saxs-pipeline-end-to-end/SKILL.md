@@ -1,13 +1,13 @@
 ---
 name: run-a-sec-saxs-pipeline-end-to-end
-description: "端到端跑一条 SEC-SAXS 系列（图像→报告，全在 RAW 里做）：补出每帧 BL19U2 header txt 让 RAW 逐帧归一化（不写归一化 tif）、裁剪区归一化视频、buffer/sample 区与扣减、多区间 Guinier 结果、IFT、分子量、DAMMIF/DENSS 形状重建，每个节点都落 .dat + 表格 + RAW PDF 报告。用于「把这条 SEC-SAXS 数据端到端跑一遍」「一千多帧怎么变成曲线和报告」「归一化视频怎么做」「珠模怎么出」「要各节点 profile 的 dat」；不负责单点判据（Guinier 取点→assess-guinier-fit-quality，P(r)/Dmax→compute-and-validate-p-of-r，MW 方法选择→choose-a-molecular-weight-method，重建评估→evaluate-a-shape-reconstruction）。"
-version: 1.0.0
+description: "端到端跑一条 SEC-SAXS 系列（图像→报告，全程 RAW）：先认洗脱峰，≥2 个峰就逐峰建子目录、各用本峰的 buffer 与峰窗分别扣减分析（RAW 只认最大那个峰，原流程会静默丢掉别的峰）；逐帧归一化（补 BL19U2 header txt / 读线站已有 txt）、裁剪区归一化视频、多区间 Guinier、IFT、分子量、DAMMIF/DENSS 形状重建，每个节点落 .dat + 表格 + 图 + RAW PDF 报告 + 结果 README。用于「把这条 SEC-SAXS 数据端到端跑一遍」「这条系列有两个洗脱峰、怎么分别分析」「一千多帧怎么变成曲线和报告」；不负责单点判据（Guinier 取点→assess-guinier-fit-quality，P(r)/Dmax→compute-and-validate-p-of-r，MW 方法选择→choose-a-molecular-weight-method，重建评估→evaluate-a-shape-reconstruction，未解析重叠峰分解→deconvolve-overlapping-elution-peaks）。"
+version: 1.1.0
 author: hermes
 license: MIT
-tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss]
+tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss, multi-peak, peak-detection]
 metadata:
   hermes:
-    tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss]
+    tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss, multi-peak, peak-detection]
     related_skills:
       - slug: process-sec-saxs-series
         relation: composes-with
@@ -21,6 +21,8 @@ metadata:
         relation: composes-with
       - slug: write-saxs-results-readme
         relation: composes-with
+      - slug: deconvolve-overlapping-elution-peaks
+        relation: contrasts-with
 ---
 
 # 端到端跑一条 SEC-SAXS 系列（全程 RAW）
@@ -132,7 +134,10 @@ python crop-video-normalized.py --series-dir <tif 目录> --norm-csv <out>/norm/
 
 ```bash
 python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> --cfg <日期>.cfg \
-  [--steps integrate,series,guinier,ift,mw,shape,report] \
+  [--steps integrate,peaks,series,guinier,ift,mw,shape,report] \
+  [--multi-peak auto|off|always] [--peak-ranges "lo,hi;lo,hi"] [--peak-buffers "s,e;s,e|s,e"] \
+  [--peak-q-range "qlo,qhi"] [--peak-min-prominence 0.2] [--peak-min-snr 5] \
+  [--peak-buffer local|global] [--peak-buffer-max N] [--peak-sweep] \
   [--buffer-range "s,e[;s,e]"] [--sample-range s,e] [--baseline none|linear|integral] \
   [--trim-qmin q] [--trim-qmax q] \
   [--guinier-ranges "qlo:qhi,..."] \
@@ -140,10 +145,14 @@ python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> -
   [--n-models 4] [--symmetry P1] [--atsas-dir <ATSAS>/bin]
 ```
 
+（认峰与逐峰分析的全部参数见下面「多峰 SEC 数据」一节；只跑 `--steps integrate,peaks` 就是
+"先看有几个峰"。）
+
 内部只调用 `bioxtasraw.RAWAPI`（= GUI 面板背后的同一套实现）：
 
 | 节点 | RAW 入口 | 产物 |
 |---|---|---|
+| **认峰（多峰识别）** | `sec_peaks.detect_peaks`（归一化/平滑/找峰沿用 RAW 的 `SASCalc.smooth_data` + `SASCalc.find_peaks`） | `series/sec_peaks.png`（判定图）、`series/sec_peaks_zoom.png`、`tables/sec_peaks.csv`、`series/sec_peaks.json`；**≥2 个峰时**另有 `peaks/peakNN_apexNNNNN/`（每峰一棵完整产物树） |
 | 积分（含逐帧归一化） | `load_and_integrate_images(files, settings)` | `profiles/01_integrated/<帧名>.dat` × N + `tables/frames_integrated.csv` |
 | series + buffer 区 + 扣减 | `profiles_to_series` → `find_buffer_range` → `set_buffer_range` | `series/<前缀>_series.hdf5`、`profiles/02_buffer/buffer_avg.dat`、`profiles/03_subtracted/<帧名>_sub.dat` × N |
 | （可选）基线 | `find_baseline_range` / `set_baseline_correction` | `profiles/05_baseline/*.dat`；之后 `profile_type='baseline'` |
@@ -185,8 +194,160 @@ python <write-saxs-results-readme>/scripts/write-readme.py <产物根>       # �
 python <write-saxs-results-readme>/scripts/verify-results-folder.py <产物根>   # 验收：结构与关键结果对齐
 ```
 
+## 多峰 SEC 数据（≥2 个洗脱峰）：逐峰识别 + 逐峰分析
+
+**为什么原来会丢峰**：RAW 自己只认一个峰 —— `SASCalc.findSampleRange()` 里
+`max_peak_idx = np.argmax(peak_params['peak_heights'])`（`SASCalc.py:4071`），
+`find_buffer_range` 也一样只用最大峰的位置去定搜索窗。所以一条有两个组分的 SEC 系列，
+用"RAW 自动"跑出来**只有一条曲线，而且只是最大那个峰的**，第二个峰被静默丢掉
+（产物看起来完全正常，只是少了东西）。本 skill 的管线补上这一步：
+**先认峰，≥2 个就逐峰建子目录、各用自己的 buffer 与峰窗分别扣减与分析**。
+
+### 多峰 0 — 先看有几个峰（几十秒，不跑下游）
+
+```bash
+python run-raw-sec-pipeline.py --series-dir <tif 目录> --cfg <日期>.cfg \
+  --out-dir <产物根> --steps integrate,peaks
+```
+
+产物：`series/sec_peaks.png`（总览）、`series/sec_peaks_zoom.png`（逐峰放大）、
+`tables/sec_peaks.csv`（峰表）、`series/sec_peaks.json`（阈值与全部实测数字）。
+**先按"多峰 2"看图**，再决定要不要跑全流程。
+
+### 多峰 1 — 怎么认峰（口径与阈值）
+
+- 色谱图 = **扣减后曲线在 q 窗口 [0.01, 0.05] 1/Å 的积分强度**（`--peak-q-range`，
+  `SASM.getIofQRange` 的梯形积分）。**不要用总强度**：实测 BSA 2000 帧的总强度只有 ~10% 起伏、
+  且被束位漂移主导，任何阈值都会找出十几个假峰。
+- 基线：**滚动中位数**（窗口默认 ≈ n/10、51–401 帧，`--peak-baseline-window`）——
+  先把漂移当基线减掉，峰才浮出来。
+- 平滑与找峰**沿用 RAW 内部口径**：`SASCalc.smooth_data`（savgol，窗口 min(51, n/2)）+
+  `SASCalc.find_peaks`（= `scipy.signal.find_peaks`）。
+- 四个下限（都可用 `--peak-min-*` 改）：
+
+  | 参数 | 默认 | 含义 |
+  |---|---|---|
+  | `--peak-min-prominence` | 0.2 | 峰幅度 / 最高峰（**主判据**）|
+  | `--peak-min-snr` | 5 | 峰高 / 基线噪声（1.4826×MAD）|
+  | `--peak-min-width` | 5 帧 | 半高宽下限（滤尖刺）|
+  | `--peak-min-height` | 0.05 | 峰高 / 最高峰（兜底）|
+
+- **为什么幅度默认卡在 0.2**：扣减后的色谱图本身带**系统性纹波**（单个全局 buffer 平均 ×
+  束位漂移 → 剩余起伏可达主峰的 10–20%）。实测 4EH2 那条数据里，纹波在三个 q 窗口都能复现、
+  峰值 7–15σ、半高宽 10–18 帧 —— "相对噪声"与"多 q 窗口一致性"这类判据**都杀不掉它们**，
+  只有"相对主峰的幅度"能。要找 <20% 主峰的小组分：调低阈值，然后**必须**逐个人工看图。
+- 无束流帧（总强度 < 0.5×全系列中位）在峰检测与 buffer 挑选里都被剔除：实测 4DH1-KDPV-ZN
+  有 16 帧这种帧，扣减后是一根巨大的负尖刺，会被 find_peaks 当成峰。
+
+### 多峰 2 — 视觉复核是流程的一步，不是可选项
+
+管线自己算一份"必须看图"的条件清单（`sec_peaks.needs_visual_check`），命中任一就写进日志、
+`README.md` 与 `sec_peaks.json` 的 `visual_check_reasons`，并在 README 里明写
+**"看图之前别引用数字"**：
+
+- 峰刚过阈值（幅度 < 3×阈值 或 SNR < 15σ）→ 可能是纹波/肩峰；
+- 相邻两峰：谷底/峰高 ≥ 0.2 **或** 经典分辨率 R = 2Δt/(w1+w2) < 1.5 → 两峰可能没真分开；
+- 某个峰的 buffer 段落在**两峰之间**（谷底）→ 会带进另一个组分；
+- 某个峰的 sample 窗 < 10 帧 → Guinier/IFT 不可靠；
+- 两侧 buffer 段**水平差 ≥ 0.15×主峰** → 峰前/峰后基线不在同一水平；
+- 有疑似无束流帧，或峰顶紧邻这种帧。
+
+**看图判四件事**：
+1. 峰的个数/位置与**裁剪区视频**或 UV 痕对得上吗？
+2. 每个峰的 sample 窗（彩带）框住峰中心了吗？两侧 buffer 段（斜纹）落在**真基线**上，
+   而不是肩部或谷底？
+3. 逐峰放大图里峰是否回到基线？两峰之间的谷底是**降到基线**（真分开）还是**只降一点点**（未解析重叠）？
+4. 总览图下面三栏里，每个峰在**自己的 buffer** 下有没有一段 Rg/MW **平台**？
+
+### 多峰 3 — 改参数只看峰：`find-sec-peaks.py`（秒级，不重跑积分）
+
+```bash
+python find-sec-peaks.py --products <产物目录>                    # 看自动结果
+python find-sec-peaks.py --products <目录> --sweep                # 出一张阈值扫描图，人眼挑一组
+python find-sec-peaks.py --products <目录> --peak-min-prominence 0.1 --peak-q-range 0.02,0.06
+python find-sec-peaks.py --products <目录> --peak-ranges "690,720;800,840"    # 人工给区间
+python find-sec-peaks.py --products <目录> --buffer-range "560,620;800,880"   # 换 buffer 重算扣减（走 RAW）
+```
+
+- 它直接读 `profiles/*.dat` 做梯形积分（与 RAW 的 `getTotalI` / `getIofQRange` 逐点一致），
+  **不重跑图像积分**；
+- `--sweep` 把 6 组阈值画在同一张图上（每组标注峰数），人眼挑最符合峰形的一组；
+- 每次都会打印**可直接搬回主管线的参数**（`--peak-ranges` / `--peak-buffers` / 阈值）。
+
+### 多峰 4 — 把视觉结论写回主管线
+
+```bash
+# 自动结果可用 → 什么都不用给（默认 --multi-peak auto）
+# 人工确认了峰窗与 buffer → 原样搬回去
+python run-raw-sec-pipeline.py ... \
+  --peak-ranges "801,832;943,977" \
+  --peak-buffers "0,800;833,942|833,942;978,1499"
+```
+
+- `--multi-peak auto`（默认）：≥2 个峰 → 逐峰分析；只有 1 个峰 → 走原来的单峰流程
+  （RAW 自动 buffer + 自动样品区，行为与从前一致）。
+- `--multi-peak always`：即使只有 1 个峰，也用它**自己的**前后两段 buffer + 峰窗。
+- `--multi-peak off`：不分峰，只出检测图/表（"其实只有/有两个峰"这个信息本身就有用）。
+
+### 多峰 5 — 产物布局
+
+```
+<产物根>/
+  README.md                  ← 索引：峰表 + 每个峰的入口 + "看图之前别引用数字"清单
+  tables/sec_peaks.csv       ← 峰表（apex/窗/幅度/SNR/半宽/buffer/谷底比/R/告警）
+  series/sec_peaks.png       ← 判定图（峰窗 + buffer + 每峰自己的 Rg/I(0)/MW）
+  series/sec_peaks_zoom.png  ← 每峰一张放大图
+  series/sec_peaks.json      ← 全部阈值与实测数字（可复现）
+  run_meta.json              ← n_peaks / peaks[] / visual_check_reasons
+  profiles/01_integrated/    ← **共享**（图像只积分一次）
+  peaks/peak01_apex00812/    ← 每个峰一个完整产物目录
+  peaks/peak02_apex00957/    ←   README.md / run_meta.json / profiles/ / tables/ / ifts/ / models/ / reports/ / series/
+```
+
+每个峰的子目录 = 那一峰单独跑一遍的结果，只是 `profiles/01_integrated` 是**相对符号链接**
+（不重复占盘）。**每个峰的扣减是用本峰的 buffer 段重算的**，所以子目录里的 Rg/I(0)/MW
+是该峰自己的口径；顶层 `sec_peaks.png` 把各峰曲线拼在一起，方便比"哪个峰的 Rg 平台平"。
+峰子目录里的 `README.md` 由共享实现 `write-saxs-results-readme` 写（与单峰跑一遍同款 8 节模板）；
+顶层 `README.md` 是本 skill 写的**索引**（峰表 + 每峰入口）。
+
+### 多峰 6 — buffer 与边界的判断规则
+
+- 每个峰的 buffer = **紧邻它的前一段 + 后一段非峰区**（`--peak-buffer local`，默认）——
+  就是"峰前+峰后两段"，因为 SEC 峰后的基线常不等于峰前。`global` = 所有峰共用全部非峰区。
+- **两峰之间的谷底不是纯 buffer**（是两组分的混合）：管线把它标成 `between-peaks` 并列入
+  看图理由。若谷底明显没回到基线，正确做法不是"再抠一段 buffer"，而是转
+  `deconvolve-overlapping-elution-peaks`（SVD/EFA/REGALS，判据是组分数与浓度曲线，不是平台）。
+- 峰窗取法：`--peak-window half-height`（默认，半高宽，保守）或 `valley`（到相邻峰谷底，整个峰）。
+- `--peak-ranges` 与所有区间都是 **0 基闭区间**。
+- 多峰模式下 `--baseline linear` **自动用该峰自己的 buffer 段当初末锚点**
+  （不再用写死的 `0,20;1800,1990`）。
+
+### 多峰 7 — 实测锚点（本机 5 条数据，2026-10-01）
+
+| 样品 | 帧数 | 检测结果 | 结论 |
+|---|---|---|---|
+| 4LI2-676 | 1800 | **1 峰**（apex 904，窗 888–933，46 帧） | 单峰，走原流程，无看图理由 |
+| 4EH2-KDPV-ZN | 1500 | **2 峰**：812（1.00×）+ 957（0.71×），R=4.4 | 峰间谷底回到基线 → 真分开；主峰外确有第二个组分 |
+| 4DH2-676-apo-3 | 1500 | **2 峰**：698（0.46×）+ 810（1.00×） | 前峰 0.46× 且谷底平 → **必须看图**确认是独立组分还是肩 |
+| bsa | 2000 | 2 峰：616（0.23×）+ 689（1.00×），但**两侧 buffer 水平差 ≈0.6×主峰** | 漂移主导 → 先 `--baseline` 或换 buffer，再谈分不分峰 |
+| 4DH1-KDPV-ZN | 1200 | 16 帧无束流；遮掉后仍有帧 28 处尖刺（7σ、0.55×） | 野值帧；看图确认后再决定要不要分析这个"峰" |
+
+（"×"= 该峰 prominence / 最高峰 prominence。）
+
+### 多峰 8 — 什么时候**不要**用多峰这一套
+
+- 谷底只降到很小（谷底/峰高 ≥ 0.5）→ 那是**未解析重叠**，不是"两个峰"：转
+  `deconvolve-overlapping-elution-peaks`；硬切区间只会把两条曲线一起弄脏。
+- 数据本身不干净（无束流帧、扣减过头、低 q 上翘）→ 先 `assess-saxs-raw-data-quality`；
+  多峰识别的全部前提是"扣减后的曲线可信"。
+- 洗脱事件只抬高几个百分点、噪声又大的数据 → 阈值怎么调都分不出峰，别硬分；
+  按判据写一份"数据不可用/不可分辨"的说明（见下面的"结果不可用-README"那条）。
+
 ## 复核点（跑完先看这几处，再看数字）
 
+0. **`series/sec_peaks.png` + `README.md` 的"看图之前别引用数字"清单（多峰时先看这个）**：
+   几个峰、每个峰的窗与 buffer 落在哪、`visual_check_reasons` 里有没有条目。
+   有 → 按「多峰 2」的眼看四问复核，或 `--peak-ranges/--peak-buffers` 覆盖后重跑。
 1. `tables/guinier_multi_range.csv`：区间之间 Rg 是否稳定；`qRg_max` 是否越过形状对应的上界（球≈1.3）；
    `r²` 与 `rg_err` 是否随区间缩窄而恶化。判据细节 → `assess-guinier-fit-quality`。
 2. `series/series_plot.png`：峰上 `Rg/I0` 是否成平台（不成平台说明多组分/聚集）；
@@ -289,9 +450,50 @@ python <write-saxs-results-readme>/scripts/verify-results-folder.py <产物根> 
 - **ffmpeg 的 libx264 + yuv420p 要求偶数边长**：61×71 的裁块靠整数放大（8×）顺带解决。
 - 视频的 `-pix_fmt rgb24` 必须与写进管道的字节一致（写 RGB 就声明 rgb24），否则帧数会变 3 倍。
 
+### 多峰相关的坑（都是实测撞出来的）
+
+- **RAW 自己只认最大的那个峰**：`SASCalc.findSampleRange()` 里 `max_peak_idx =
+  np.argmax(peak_params['peak_heights'])`，`find_buffer_range` 也只用最大峰定搜索窗。
+  → 一条有两个组分的系列，用"RAW 自动"只会给你**最大峰那一条**曲线，第二个峰**静默消失**。
+  本管线默认 `--multi-peak auto` 处理；即使 `--multi-peak off`，`tables/sec_peaks.csv` 也会
+  告诉你实际认到几个峰。
+- **认峰别用总强度**（`series.getIntI`）：实测 BSA 2000 帧总强度只有 ~10% 起伏、被束位漂移主导，
+  照 RAW 内部口径（归一化后 height=0.4）能找出 22 个"峰"。用**低 q 窗口 [0.01,0.05] 的积分强度**
+  （本 skill 默认，`--peak-q-range`）——低 q 对溶质敏感、对噪声不敏感。
+- **扣减后的色谱图带系统性纹波**：单个全局 buffer 平均 × 束位漂移 → 剩余起伏可达主峰的 10–20%。
+  实测 4EH2 那条数据里，纹波在三个 q 窗口都复现、峰值 7–15σ、半高宽 10–18 帧，
+  **"相对噪声"与"多 q 窗口一致性"这两类判据都杀不掉它**。这就是 `--peak-min-prominence`
+  默认卡 0.2×主峰的原因；要挖更小的组分，调低阈值后**必须**逐个人工看图。
+- **谷底判据有两个必踩的坑**（写代码时实测撞到）：① 谷底要在**平滑过**的曲线上取，
+  否则噪声让谷底随便跌到 0 以下，任何两峰都会被判成"已分开"；② 峰高是"相对最高峰"的
+  归一化值、谷底是绝对强度，**得同除一个 top 才能比**。另外给一个经典色谱分辨率
+  `R = 2Δt/(w1+w2)`（≥1.5 基线分离、1.0–1.5 部分重叠、<1.0 未分开），**两个判据一起看**。
+- **无束流/断束帧**（整帧总强度 < 0.5×全系列中位）：实测 4DH1-KDPV-ZN 有 16 帧，扣减后是一根
+  巨大的负尖刺，会被 find_peaks 当峰。现在检测与 buffer 挑选都剔除它们，但**峰顶紧邻这种帧**
+  的峰仍会被标出来要人工看图（不要拿它当结果）。
+- **多峰模式下每个峰都要重跑一次 `set_buffer_range`**（因为要用本峰自己的 buffer 段），
+  所以逐帧 Rg/I(0)/MW 是**逐峰口径**；顶层 `sec_peaks.png` 把各峰曲线拼在一起才看得出
+  "哪个峰的 Rg 平台平"。
+- **`--steps integrate,peaks` 是最省的第一步**：本机 1500 帧 ≈ **85 s**（含积分）出峰表与判定图，
+  先看几个峰再决定要不要跑下游，别一上来就跑全套。
+- **多峰时顶层 `README.md` 是索引**（由 `sec_peaks.write_peaks_readme` 写），每个峰自己的
+  README 由共享实现 `write-saxs-results-readme` 写在峰子目录里。**别**用
+  `write-saxs-results-readme/scripts/write-readme.py <产物根>` 覆盖顶层（它写的是单样品版，
+  会把索引换掉；要补写就补到峰子目录上）。
+- **峰子目录里的 `profiles/01_integrated` 是相对符号链接**（图像只积分一次，不重复占盘）：
+  拷贝/打包产物时要跟随链接（`cp -rL`、`tar -h`），否则那 1500 份 .dat 不在包里。
+- **`find_buffer_range` 会在整条系列上失败**（返回 `success=False`）：实测 4EH2-KDPV-ZN
+  1500 帧就是这种。认峰因此退回**未扣减**曲线（不依赖 buffer），并照常出峰表——
+  不要因为"RAW 自动 buffer 失败"就以为这条系列没法处理。
+
 ## 相关 skills
 
 - **process-sec-saxs-series** — 本 skill 的"判据版"：区间怎么选、峰上 Rg 平台怎么看、SEC 为什么不能用绝对刻度。
+- **deconvolve-overlapping-elution-peaks** — `contrasts-with`：两峰之间的**谷底没回到基线**时，
+  正确做法不是切区间，而是做 SVD/EFA/REGALS 分解（判据是组分数与浓度曲线）——本 skill 的
+  多峰流程只处理"峰之间有基线"的情况。
+- **assess-saxs-raw-data-quality** — 多峰识别的全部前提是"扣减后曲线可信"；无束流帧、扣减过头、
+  低 q 上翘这些先判数据，再谈分几个峰。
 - **script-raw-with-the-python-api** — RAWAPI 的骨架与返回元组顺序（本 skill 的脚本就是它的落点）。
 - **correct-sec-saxs-baseline** — 扣减后仍漂移时选 Linear/Integral，以及本 skill 用的监视器归一套路。
 - **configure-bioxtas-raw-for-a-dataset** — 换实验日/仪器时先核对 `.cfg`。
