@@ -388,8 +388,8 @@ def write_readme(out, extra_note=None):
     A("## 结论速览")
     A("")
     warns = list(_flags)
-    if len((((sm.get("shape") or {}) if isinstance(sm.get("shape"), dict) else {})
-            .get("damaver") or {}).get("clusters") or []) > 1:
+    _dv = (sm.get("shape") or {}).get("damaver") if isinstance(sm.get("shape"), dict) else None
+    if len((_dv if isinstance(_dv, dict) else {}).get("clusters") or []) > 1:
         warns.append("DAMAVER 分成多个 cluster（形状还没定）")
     if warns:
         A("> 🟡 **需要警惕**（不否定整份结果，但引用数字前先看这几条）："
