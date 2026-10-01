@@ -1,0 +1,90 @@
+{
+  "skill": "embed-a-model-in-bead-and-density-models",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "我把 A5.pdb 想嵌到 A5-05-1 的珠模型和 DENSS 电子云里看看，怎么叠、谁叠谁？",
+      "expected_behavior": "两条分支分开做、分开报分：珠模型 → CIFSUP（template=珠模型、movable=A5.pdb，--method=NSD --selection=REGRID，NSD 从输出文件头部读）；电子云 → ChimeraX fitmap（必须给 resolution 才有 correlation，必须 search+seed 做全局搜索）。要说明两者坐标系独立、不能混画一张图；不给任何'模型配不配数据'的结论（那要 CRYSOL/PDB2SAS）。",
+      "notes": "正面场景：主入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "CIFSUP 叠完什么都不打印，NSD 那个分从哪里读？0.87 算叠得好吗？",
+      "expected_behavior": "答：CIFSUP 没有运行时输出（手册原文），NSD 写在输出文件里（cif 是 `score` 行，PDB 是 REMARK 265 段），用 grep '^score' 读。0.87 的判读只有官方一条刻度：NSD→0 理想、>1 系统性不同；且必须同时报 selection（REGRID 0.875 vs ALL 2.202 是量级差）与珠模型系综（换一批 DAMMIF 模型 NSD 会变）。不许编'合格线'。",
+      "notes": "正面场景：分数在哪 + 怎么读。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "ChimeraX fitmap 跑完只有 overlap 和 average map value，correlation 一栏是 None。",
+      "expected_behavior": "诊断：没给 `resolution` → 退化成 atoms-in-map 拟合，只最大化原子位置的平均图值，correlation 按文档就是 None（不是 bug）。处方：加 `resolution R`（map-in-map），建议跑 R 阶梯（10/15/20/25 Å）并配 `search N seed M logFits csv` 做全局搜索、固定种子。",
+      "notes": "正面场景：最常见的 fitmap 误用。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "同一张电子云里我跑出两个分数差不多、但摆法差很远的解，报哪个？",
+      "expected_behavior": "答：一个都不许单独报。给'最好的摆法 + 分数 + 还有几个分数接近的不同摆法'（实测 A5-05-1：15 Å 前两名 0.9122/0.9113 姿态不同；20 Å 有一个相距 27.9 Å CA-RMSD 的解只差 0.0026）。这来自 SAXS 包络本身不唯一；要判模型对不对请回 CRYSOL/PDB2SAS 直接拟合。",
+      "notes": "正面场景：本 skill 的核心判据。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "样品目录里只有 denss.mrc 和扣减曲线，没有珠模型，我要把模型摆进去。",
+      "expected_behavior": "代建珠模型：从 tables/ift_summary.json 取 chosen+trusted run 的 idx_min/qmax/dmax/rg，用 RAWAPI.gnom(profile, dmax, rg=…) 控 Dmax（不要用 datgnom，它没有 Dmax 参数）→ DAMMIF ×15 → DAMAVER 取 -global-damfilt；并提醒喂整条曲线含低 q 上翘会让 GNOM 给 χ²数百的 SUSPICIOUS 解。",
+      "notes": "正面场景：靶子缺失时的补建路径。"
+    },
+    {
+      "id": "should-trigger-06",
+      "type": "should_trigger",
+      "prompt": "用 ChimeraX 无头模式 --nogui 存图片报 OpenGL rendering is not available。",
+      "expected_behavior": "答：ChimeraX --nogui 渲染不了，`save xxx.png` 会抛 LimitationError（脚本不退出、只是没有图）。改用 PyMOL：/Applications/PyMOL.app/Contents/bin/python3.10 + pymol.finish_launching(['pymol','-cq']) → cmd.ray → cmd.png；珠球要给 transparency/小 sphere_scale，两个靶子的图要分开画。",
+      "notes": "正面场景：出图路径。"
+    },
+    {
+      "id": "should-trigger-07",
+      "type": "should_trigger",
+      "prompt": "怎么判断 A5.pdb 到底塞进那个珠球格子没有？NSD 0.88 我看不出对错。",
+      "expected_behavior": "补一条直白几何复核：算每个 CA 到最近 bead 的距离分布（中位数、8 Å 内比例）。实测 A5-05-1 中位数 2.2 Å、94% 在 8 Å 内。若大面积在外面，先怀疑珠模型系综（重跑 DAMMIF/DAMAVER）而不是宣布模型不对。",
+      "notes": "正面场景：NSD 之外的几何复核。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "我这个样品跑了 15 个 DAMMIF 模型，DAMCLUST 说有 3 个簇、平均 NSD 0.89，重建还能用吗？",
+      "expected_behavior": "应路由到 evaluate-a-shape-reconstruction（七条判据：a-score/平均 NSD/被剔模型数/簇数/χ²/Rg·Dmax/MW）。本 skill 只管把模型嵌进去，不判重建质量。",
+      "notes": "诱饵：同样出现 DAMMIF/NSD 字样，但问的是重建本身。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "CRYSOL 算的理论曲线低 q 和实验差很多，是模型不对还是数据不对？",
+      "expected_behavior": "应路由到 fit-a-high-resolution-model-to-data（生成即拟合；Data/Chi²/Prob 字段、harmonics、PDB2SAS 的 N samples）。本 skill 的分数全是几何/摆放分数，不是拟合优度。",
+      "notes": "诱饵：同样是'模型对照 SAXS'，但问的是拟合。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "P(r) 的 Dmax 该取多少？用 GNOM 还是 BIFT？",
+      "expected_behavior": "应路由到 compute-and-validate-p-of-r。本 skill 只在代建珠模型时**读**上游定好的 Dmax/q 窗口，不负责定它。",
+      "notes": "诱饵：都涉及 GNOM/Dmax，但问的是 P(r) 本身。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "这批管式原始帧低 q 上翘，是真散射还是 beamstop 边缘？",
+      "expected_behavior": "应路由到 assess-saxs-raw-data-quality（几何/掩膜 + 三道归因：空白-空白、shape×电平、2D 差分）。本 skill 不碰原始帧。",
+      "notes": "诱饵：低 q 上翘会一路影响到 GNOM/DAMMIF，但入口在原始帧 QC。"
+    },
+    {
+      "id": "should-not-trigger-05",
+      "type": "should_not_trigger",
+      "prompt": "帮我把这批样品的曲线一路跑成 Rg/P(r)/MW/DENSS 图并出一份 README。",
+      "expected_behavior": "应路由到 run-a-tube-saxs-pipeline-end-to-end（或 SEC 版）。本 skill 从那条流水线的产物出发，不重跑积分/扣减/Guinier/IFT。",
+      "notes": "诱饵：上游流水线；本 skill 是它的下游。"
+    }
+  ]
+}
