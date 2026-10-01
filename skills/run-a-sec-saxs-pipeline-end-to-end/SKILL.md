@@ -221,6 +221,17 @@ python write-results-readme.py --out <产物根>
   而珠模的 Σχ² 有 66% 来自 q 0.2–0.46 段（那里 σ 小、点数多，系统性偏 ~2σ）。两件事一起读才对：
   **"点多、误差小的高 q 段"会把模型表达能力的不足放大成 χ²**，但**不能**用它来解释整条曲线的失配。
   裁高 q 后 `auto_dmax` 常返回 −1 让 GNOM 报 `expected value ≥ 0 for option 'rmax', got '-1'` → 这时配 `--ift-dmax` 显式给 Dmax 即可。
+- **高 q 该截到哪，由 I/σ 决定，别凭感觉也别人云亦云**：读 `profiles/04_sample/sample_avg.dat` 的误差列，
+  按 q 分箱算中位 I/σ —— **中位 I/σ 掉到 ~2 以下的那个 q 就是 IFT/珠模该截的地方**；若高 q 段不只是弱、
+  还**系统性为负**（负值比例过半），那叫**扣减过头**，跟"高 q 弱"是两回事，但一样得截。本机实测
+  **4EH2-KDPV-ZN**（1500 帧、有监视器归一，色谱正常）：q ≤ 0.15 中位 I/σ 17–80，0.15–0.25 掉到 **0.91**
+  （46% 负值），0.25–0.45 中位 **−4.28、98% 负值**。整段喂 IFT 的后果是**三条一起崩**：DAMMIF Slow
+  χ² **15.03**（其它样品 1.1–4.9）、DENSS 撑不出支撑直接失败（`index -1 is out of bounds … size 0`）、
+  MW **Vp 116 kDa**（同一批的贝叶斯/datclass 都是 ~29）——而且**换 Dmax 没用**（`--ift-dmax 79` 后 χ² 仍 15.03），
+  说明病根在数据段不在 Dmax。换 `--trim-qmax 0.15` 后：DAMMIF χ² **1.40**、DENSS χ² 1.42 复活、
+  Vp 33.8、DAMAVER NSD 0.590±0.070。同批对照 **4DH2-676-apo-3** 的信噪截点在 **0.217**（χ² 4.25）——
+  **每条曲线各量一次**，不要照抄别的样品的数字。代价：高 q 截短后 DATCLASS 会以
+  `insufficient data to integrate to s*Rg >= 5.0` 跳过、BIFT 的自动 Dmax 可能退化（实测 400 Å）→ 用 `--ift-dmax` 显式给。
 - **低 q 被寄生散射污染会把 IFT 的 Dmax 拖到离谱值**：同一曲线未裁 q 时 BIFT 给 **Dmax=417 Å / Rg=149 Å**。
   用 `--trim-qmin 0.017` 显式裁掉低 q 段（内部就是 RAW 自己的 `setQrange`，不是自写拟合），再跑 IFT/MW。
 - **ATSAS 接线三件事**（装好 ATSAS 后要一次对上）：① `--atsas-dir` 必须指到 **`bin` 这一级**
