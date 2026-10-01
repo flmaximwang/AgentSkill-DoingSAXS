@@ -107,7 +107,15 @@ def read_sample_meta(sample_dir):
                     trusted=bool(chosen.get("trusted")), tag=chosen.get("tag"))
     meta["dat"] = os.path.join(sample_dir, "profiles", "03_subtracted", "subtracted.dat")
     meta["density_map"] = None
-    for cand in ("models/denss.mrc", "models/denss_current.mrc"):   # the final map, not _support
+    # 密度图命名有两套：管式流水线写 models/denss.mrc；SEC 流水线写 models/<前缀>_denss.mrc。
+    # 两套都要认（否则 SEC 样品会被判成"没有电子云"），且都取 final map、不要 _support。
+    samp_prefix = os.path.basename(sample_dir.rstrip("/"))
+    dens_cands = [f"models/{samp_prefix}_denss.mrc", f"models/{samp_prefix}_denss_current.mrc",
+                  "models/denss.mrc", "models/denss_current.mrc"]
+    dens_cands += [os.path.relpath(p, sample_dir) for p in sorted(
+        glob.glob(os.path.join(sample_dir, "models", "*denss*.mrc")))
+        if "support" not in os.path.basename(p)]
+    for cand in dens_cands:   # the final map, not _support
         if os.path.exists(os.path.join(sample_dir, cand)):
             meta["density_map"] = os.path.join(sample_dir, cand)
             break
