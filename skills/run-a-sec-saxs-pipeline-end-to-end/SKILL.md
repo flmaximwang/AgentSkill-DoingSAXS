@@ -459,12 +459,14 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
 
 ## 坑（都是实测撞出来的）
 
-- **在 RAW 源码目录里跑会 `ImportError: bioxtasraw.sascalc_exts`**（源码树遮蔽 site-packages 的编译包）→ 见故障表 **#13**（换目录跑；或在源码树里 `build_ext --inplace`）。
-
-- **`find_buffer_range` / `find_sample_range` 在"截断的系列"上必然失败**（返回 `success=False`、区间 `None`：只取峰前的帧、或系列里没有可识别洗脱峰）→ 见故障表 **#5**（手工给 `--buffer-range/--sample-range`；多峰走 `--peak-buffers`）。
-
-- **ATSAS 不在 = DAMMIF/GNOM/DATGNOM/CIFSUP 全不可用**（RAW 的 DAMMIF 是外壳：`os.path.join(atsas_dir, 'dammif')`；`RAWAPI.dammif` 抛 `NoATSASError`）→ 见故障表 **#1**：先只出 DENSS 电子云 + RAW 原生 BIFT，并在 README 写明。装好 ATSAS 后加 `--atsas-dir <ATSAS>/bin`。
-
+- **在 RAW 源码目录里跑会 ImportError `bioxtasraw.sascalc_exts`**：源码树遮蔽 site-packages 里编译好的包。
+  要么换目录跑，要么在源码树里 `build_ext --inplace`。
+- **`find_buffer_range` / `find_sample_range` 在"截断的系列"上会失败**（返回 `success=False`、区间为 `None`）：
+  只取峰前的帧、或系列里没有可识别洗脱峰时必然如此 → 用 `--buffer-range/--sample-range` 手工给（0 基帧号）。
+- **ATSAS 不在 = DAMMIF/GNOM/DATGNOM/CIFSUP 全不可用**：RAW 的 DAMMIF 是**外壳**，
+  `RAW.py:1232-1242` 拼的是 `os.path.join(atsas_dir, 'dammif')`，`RAWAPI.dammif` 会抛 `NoATSASError`。
+  没有 ATSAS 时跑 RAW 原生 `denss` + `bift`（都可用），装好 ATSAS（`https://biosaxs.com/download`，学术免费，
+  需个性化 license）后加 `--atsas-dir <ATSAS>/bin` 即切到 DAMMIF/GNOM。
 - **逐帧 txt 有三种来源，先看清楚再动手**：① 线站已经给了（本机 `4LI2-676` 第二次下机就带了 1800 份
   `<帧名>.txt`，和 tif 并排）→ **不要重新生成**，用 `--from-txt-dir <目录>` 只把它们的 `Transmitted_Beam`
   读成因子表（给视频用），RAW 那边本来就直接读这些 txt；② 只给了监视器 + 日志 → 用 Step 1 生成；
@@ -493,8 +495,8 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
   Vp 33.8、DAMAVER NSD 0.590±0.070。同批对照 **4DH2-676-apo-3** 的信噪截点在 **0.217**（χ² 4.25）——
   **每条曲线各量一次**，不要照抄别的样品的数字。代价：高 q 截短后 DATCLASS 会以
   `insufficient data to integrate to s*Rg >= 5.0` 跳过、BIFT 的自动 Dmax 可能退化（实测 400 Å）→ 用 `--ift-dmax` 显式给。
-- **低 q 被寄生散射污染会把 IFT 的 Dmax 拖到离谱值**（同一曲线未裁 q 时 BIFT 给 Dmax=417 Å / Rg=149 Å）→ 见故障表 **#4**（`--trim-qmin 0.017` 显式裁低 q，内部就是 RAW 的 `setQrange`，不是自写拟合）。
-
+- **低 q 被寄生散射污染会把 IFT 的 Dmax 拖到离谱值**：同一曲线未裁 q 时 BIFT 给 **Dmax=417 Å / Rg=149 Å**。
+  用 `--trim-qmin 0.017` 显式裁掉低 q 段（内部就是 RAW 自己的 `setQrange`，不是自写拟合），再跑 IFT/MW。
 - **ATSAS 接线三件事**（装好 ATSAS 后要一次对上）：① `--atsas-dir` 必须指到 **`bin` 这一级**
   （RAW 用 `os.path.split(atsas_dir)[0]` 反推 `ATSAS` 变量；本机实测 `/Applications/ATSAS-4.1.4-1/bin`）；
   ② `dammif` 写出的模型名是 **`<prefix>-1.<model_format>`**（默认 `cif`），而 `damaver` **只接受文件名、
@@ -514,20 +516,31 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
   bsa `χ²=2.08 / Rg 28.0 Å / Dmax≈87 Å / MW 61 kDa / DAMAVER NSD 0.09`（可用）；4LI2-676
   `χ²=4.87 / Rg 16.3 Å / Dmax≈53 Å / MW 9 kDa / NSD 0.20`（可用）；4DH2-676-apo-3
   `χ²=4.27 / Rg 25.3 Å / Dmax≈96 Å / MW 28–30 kDa / NSD 0.29`（尚可，模型偏扁平，需与高分辨模型/其他证据对照）。
-- **DENSS 的两种报错都不是 DENSS 参数问题**：`ValueError: The number of derivatives at boundaries does not match: expected 3, got 0+0`（`DENSS.py:4269 regrid_Iq` 三次样条）= **扣减后曲线已退化**（点数/单调性不足、噪声主导）；`DENSS failed to run properly` / `IndexError: index -1 is out of bounds … labeled_support == feature`（`DENSS.py:1931`）= **输入 IFT 不可用**（收缩包络把 support 压空）→ 见故障表 **#3**。
-  **先判数据，再谈重建。**
-
+- **DENSS 报 `ValueError: The number of derivatives at boundaries does not match: expected 3, got 0+0`**（来自
+  `DENSS.py:4269 regrid_Iq` 的三次样条）= **扣减后曲线已退化**（点数/单调性不足、噪声主导），本机 `4EH2-KDPV-ZN`
+  就是这个报错。这一条与下面的 IFT 问题是一类：**先判数据，再谈重建**。
+- **DENSS 报 `DENSS failed to run properly` / `IndexError: index -1 is out of bounds ... labeled_support == feature` = 它的输入 IFT 不可用**，不是 DENSS 参数没调好：那个下标来自 `DENSS.py:1931` —— 收缩包络把 support 压成**空**（`num_features == 0`）时 `sums` 长度为 0。
+  根因几乎总是 IFT 被低 q 拖出**离谱的 Dmax**（本机 4LI2-676 实测：Guinier Rg=15.9 Å，BIFT 却给 Dmax=189–357 Å，
+  DENSS 盒子 side>1000 Å、密度摊薄 → 塌陷）。处置顺序：① 先把 q 裁到 qRg_min ≈ 0.4–0.5（`--trim-qmin`）；
+  ② 仍不对就用**显式 Dmax** 走 RAW 原生 DIFT 喂 DENSS（`--ift-dmax 55`，经验起手 Dmax ≈ 3×Guinier Rg）；
+  ③ 只在 ① ② 之后才考虑 DENSS 自己的步骤/盒子参数。**不要在 IFT 坏的时候去调 DENSS 参数。**
 - **`models/` 空着 = 没跑 `shape` 步，或缺 ATSAS 又被当成"珠模出不来就什么都不出"**：正确姿势是
   `--model-engine auto` —— 电子云（DENSS）总出，珠模（DAMMIF）有 ATSAS 才出；两者都缺才叫失败。
-- **帧区间是 0 基闭区间，`end` 给到帧数就会 `IndexError`**（`SECM.averageFrames` 里 `list index out of range`）→ 见故障表 **#6**（脚本有 `clip_ranges` 自动收到 n−1 并告警，但区间里的数字仍要自己核对）。
-
-- **判"这条系列能不能用"的硬指标**（任一命中 = 数据问题，不是参数问题）：Guinier `Rg < 5 Å` 或 `r² < 0`；`Vp` 为负；逐帧 `Rg` 在几十到几埃之间乱跳；DENSS 建不起样条 → 走 **🔴 STOP 4**，在产物根写 `结果不可用-README.md`（数据事实 + 试过的区间对照 + 三重证据 + 建议）。
-  本机案例：`4EH2-KDPV-ZN` 的 445 帧旧批次（洗脱事件只抬高 ~3.7%，两种区间都给 Rg 1.27–1.29 Å）。
-
-- **脚本被并发编辑时，先 `git status` 再跑，必要时用快照跑** → 见故障表 **#14**（本仓库确有别的会话在改同一脚本，撞到过两次半成品：`step_ift` 返回值数变了、`ift/itf` 拼写）。长跑前 `cp` 到 scratch 冻结，报告里写清用的哪个 sha。
-
-- **"结果看不懂"是缺交付物，不是缺解释**：产物目录必须有 `<产物根>/README.md`（管线最后一步调 `write-saxs-results-readme` 生成；旧目录用 `write-readme.py --out <目录>` 补）→ 交付前过 **🔴 STOP 6**（README 时间戳必须比数据新；用了哪条兜底就写进"没做的/不能信的"）。
-
+- **帧区间是 0 基闭区间，`end` 给到帧数就会 `IndexError`**：445 帧的系列（4EH2 旧批次）写 `--buffer-range "60,220;400,445"`
+  → `SECM.averageFrames` 里 `list index out of range`（本机实测）。脚本现在有 `clip_ranges` 自动收到 `n−1` 并告警，
+  但**区间里的数字仍应自己核对**（峰位置看副产物色谱图最保险）。
+- **判"这条系列能不能用"的硬指标**（任一命中就是数据问题，不是参数问题）：Guinier `Rg < 5 Å` 或 `r² < 0`；
+  `Vp` 为负；逐帧 `Rg` 在几十到几埃之间乱跳；DENSS 建不起样条。本机 `4EH2-KDPV-ZN` 的 **445 帧旧批次**（无监视器、
+  洗脱事件只抬高 ~3.7%、两种区间都给出 Rg 1.27–1.29 Å）就是这种：**在产物目录写一份
+  `结果不可用-README.md` 说明判定依据**（数据事实 + 试过的区间对照 + 三重证据 + 建议），别让表格里的数字被当结果引用。
+- **脚本被并发编辑时，先 `git status` 再跑，必要时用快照跑**：本机同一仓库有别的会话在改同一个脚本，
+  撞到过两次半成品（`step_ift` 改返回 5 值而 `main` 还解 4；`step_shape` 里 `itf`/`ift` 拼写），
+  两次都是"跑到一半 ValueError/NameError"。稳妥做法：`git log -1` 记下 revision → `cp` 到 scratch 当快照 →
+  跑快照 → 报告里写清用的哪个 sha。
+- **"结果看不懂"是缺交付物，不是缺解释**：产物目录必须有一份 `<产物根>/README.md`（管线最后一步由
+  `write-saxs-results-readme` 自动写，旧目录用它的 `write-readme.py <目录>` 补）。它只读产物、不重算，
+  **必须最后写**（README 比 `tables/*.csv` 旧 = 读者拿到旧数字；`verify-results-folder.py` 会把这条标红）。
+  数据本身不可用的系列，另写 `结果不可用-README.md`（见下条）。
 - **表里 `rg = -1` 不是负数，是 RAW 的失败哨兵值**（该区间的 Guinier 拟合没收敛/点数不够）——按"此区间不可用"读，
   不要当成数值；同理 `r² < 0` 表示拟合比取平均还差。
 - **裁剪坐标：两个轴都从"大的那头"数** → `row = H−1−y`、**`col = W−1−x`**（即 180° 旋转；本机 BL19U2
@@ -539,7 +552,16 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
 
 ### 多峰相关的坑（都是实测撞出来的）
 
-- **逐峰 `tables/frame_params.csv` 的 rg/i0/vc/vp 可能整列 `-1`，而且不报错**（RAW 的可用帧判定按总强度 + `window_size=5` 连续窗要求 → 一个窗都凑不齐 → `SASCalc.py:2766` 把全部写成哨兵）→ 见故障表 **#2**。**`-1` 与"拟合失败"的哨兵同形，别当数值读。**
+- **逐峰 `tables/frame_params.csv` 里 rg/i0/vc/vp 可能**整列都是 `-1`**，而且**不报错**：
+  RAW 只对"可用帧"算这些参数（`SECM.subtractAllSASMs`：该帧强度 / buffer 平均强度 > `calc_thresh`(1.02)
+  → 标记可用；`SASCalc.run_secm_calcs` 只对**连续 `window_size`(默认 5) 帧都被标记**的窗做计算）。
+  默认按**总强度**判定，而 SEC 数据的总强度被束位/通量漂移主导——本机实测 `4EH2-KDPV-ZN`：1500 帧里
+  只有 **69 帧**被标记、且全是散落的噪声帧 → 一个 5 帧窗都凑不齐 → `run_secm_calcs` 把 rg/i0/vc/vp
+  **全部写成 -1**。表里看着像"算了，只是值是负"，其实是**根本没算**（`SASCalc.py:2766` 的兜底），
+  而 `-1` 与"拟合失败"的哨兵值**长得一模一样**。处置：用 `--frame-flag-q "0.01,0.05"`（默认已开）
+  把判定换成**低 q 窗口积分强度**（与认峰同一窗口）→ 同一数据 P1 从 0 帧变 **112 帧有值**、
+  其中 34 帧落在 P1 自己的峰窗内，Rg 中位 24.0 Å（与它的 Guinier 24.3 Å 对得上）。
+  要回到 RAW 默认口径传 `--frame-flag-q none`。**看到逐帧参数整列 -1 先查这个，别去调 Guinier 区间。**
 
 - **RAW 自己只认最大的那个峰**：`SASCalc.findSampleRange()` 里 `max_peak_idx =
   np.argmax(peak_params['peak_heights'])`，`find_buffer_range` 也只用最大峰定搜索窗。
@@ -557,8 +579,9 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
   否则噪声让谷底随便跌到 0 以下，任何两峰都会被判成"已分开"；② 峰高是"相对最高峰"的
   归一化值、谷底是绝对强度，**得同除一个 top 才能比**。另外给一个经典色谱分辨率
   `R = 2Δt/(w1+w2)`（≥1.5 基线分离、1.0–1.5 部分重叠、<1.0 未分开），**两个判据一起看**。
-- **无束流/断束帧**（整帧总强度 < 0.5× 全系列中位）会被当峰 → 见故障表 **#11**（本机 `4DH1-KDPV-ZN` 有 16 帧：扣减后是大负尖刺）。
-
+- **无束流/断束帧**（整帧总强度 < 0.5×全系列中位）：实测 4DH1-KDPV-ZN 有 16 帧，扣减后是一根
+  巨大的负尖刺，会被 find_peaks 当峰。现在检测与 buffer 挑选都剔除它们，但**峰顶紧邻这种帧**
+  的峰仍会被标出来要人工看图（不要拿它当结果）。
 - **多峰模式下每个峰都要重跑一次 `set_buffer_range`**（因为要用本峰自己的 buffer 段），
   所以逐帧 Rg/I(0)/MW 是**逐峰口径**；顶层 `sec_peaks.png` 把各峰曲线拼在一起才看得出
   "哪个峰的 Rg 平台平"。
@@ -570,7 +593,11 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
   会把索引换掉；要补写就补到峰子目录上）。
 - **峰子目录里的 `profiles/01_integrated` 是相对符号链接**（图像只积分一次，不重复占盘）：
   拷贝/打包产物时要跟随链接（`cp -rL`、`tar -h`），否则那 1500 份 .dat 不在包里。
-- （`find_buffer_range` 在多峰系列上失败的处置见故障表 **#5**。）
+- **`find_buffer_range` 会在整条系列上失败**（返回 `success=False`）：实测 4EH2-KDPV-ZN
+  1500 帧就是这种。认峰因此退回**未扣减**曲线（不依赖 buffer），并照常出峰表——
+  不要因为"RAW 自动 buffer 失败"就以为这条系列没法处理。
+
+## 相关 skills
 
 - **process-sec-saxs-series** — 本 skill 的"判据版"：区间怎么选、峰上 Rg 平台怎么看、SEC 为什么不能用绝对刻度。
 - **deconvolve-overlapping-elution-peaks** — `contrasts-with`：两峰之间的**谷底没回到基线**时，
