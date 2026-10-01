@@ -224,8 +224,11 @@ env -u PYTHONPATH /Applications/PyMOL.app/Contents/bin/python3.10 render-embed-f
   - **平滑后必须重解 level**：同一个 level 0.02 在平滑图上包围体积会涨到 **279%**；正确口径是让包围体积
     回到 `denss.log` 的 `Final Support Volume`（本次 56392 Å³），实测 level 0.09539 → 56077 Å³ = **99.4%**。
   - 该体积由 `mrcmap.py` 直接从 `.mrc` 数格点算出（`volume_above`），不是估计值。
-- **框架**：珠球面板用 `zoom(sample or beads, 5 Å)` + `--frame-margin 1.1` 的拉远；电子云面板不能用
-  `zoom()`（**surface 对象不是原子选择，PyMOL 会报 `Invalid selection name`**），改用 `orient()` + 同一个拉远。
+- **框架**（`--zoom-buffer`，默认 8 Å）：珠球面板直接 `zoom(sample or beads)`；电子云面板不能用 `zoom()`
+  （**surface 对象不是原子选择，PyMOL 会报 `Invalid selection name`**），改用「把包络包围盒做成 8 个临时 pseudoatom
+  再 zoom」——包络体积的 voxel 下标 → XYZ 用 `cmd.get_extent(map)` 换算（实测该 extent 覆盖的是**体素中心**：32 体素 /
+  217.7 Å 的盒子报 210.9 Å = 31 个间隔，所以映射是 `lo + idx/(N-1)*(hi-lo)`，不加半格）。
+  **不要**用手动拉远相机（把 view 的 9/10/11 乘系数）：PyMOL 的裁剪面不会跟着走，实测 ×1.35 整幅画面变暗糊掉。
 - **两个靶子两张图**：珠模型与 DENSS 图各自居中在各自原点，相对取向无约束；混画会得到"模型戳出珠球"的假象。
 - 补 `.pse` 不必重跑科学步骤：`embed-model.py <样品> --out-dir <结果目录> --figures-only`
   （读现成 `embed_results.json`，只重渲两个面板，几秒一个样品）。

@@ -19,6 +19,8 @@ import sys
 
 import pymol
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mrcmap  # noqa: E402  (ships next to this script)
 
@@ -77,12 +79,8 @@ def parse_args(argv=None):
                     help="background colour; black, because a translucent white envelope on a "
                          "white background is nearly invisible")
     ap.add_argument("--size", type=int, default=1200, help="ray-traced image size (px)")
-    ap.add_argument("--zoom-buffer", type=float, default=5.0,
+    ap.add_argument("--zoom-buffer", type=float, default=8.0,
                     help="margin (A) left around the drawn objects when framing the shot")
-    ap.add_argument("--frame-margin", type=float, default=1.1,
-                    help="camera pull-back factor applied after framing (1.0 = none); a surface "
-                         "object cannot be framed with a margin by zoom(), so this dolly-out is "
-                         "what keeps the envelope inside the picture")
     ap.add_argument("--ray-trace-mode", type=int, default=0,
                     help="PyMOL ray_trace_mode (1 = black outlines, 0 = off)")
     ap.add_argument("--ss-ref", default=None,
@@ -100,7 +98,7 @@ def main(argv=None):
         t = DEFAULT_TRANSPARENCY[args.kind]
     pse = args.pse or os.path.splitext(args.out_png)[0] + ".pse"
 
-    overlay, level = args.overlay, None
+    overlay, level, m = args.overlay, None, None
     if args.kind == "density":
         m = mrcmap.read(args.overlay)
         support = mrcmap.denss_support_volume(
@@ -193,21 +191,35 @@ def main(argv=None):
     cmd.set("ray_trace_mode", args.ray_trace_mode)
     cmd.set("antialias", 2)
     cmd.set("cartoon_side_chain_helper", 1)
-    # frame on the drawn objects only: `all` would include the (disabled) map brick, whose
-    # 218 A box shrinks the sample to a speck in the corner.  zoom() is an atom selection, so
-    # it cannot see an isosurface object at all (a surface has no atoms) - the density panel
-    # is framed with orient(), which uses the scene bounding box.
-    if args.kind == "density":
-        cmd.orient()
-    else:
+    # framing: zoom() is an atom selection, so it cannot see an isosurface object (a surface
+    # has no atoms).  The density panel therefore gets a temporary 8-pseudoatom box around the
+    # envelope - the map's own extent (in PyMOL units) plus the voxels above the level give the
+    # box - because zoom() on atoms is also what sets the clip planes correctly: a hand-rolled
+    # "dolly out" by scaling the camera position leaves the clip planes behind and the shot
+    # comes out fogged/clipped (measured at 1.35x: the whole frame went dark).
+    framed = False
+    if args.kind == "density" and m is not None:
+        # get_extent returns [[xlo,ylo,zlo],[xhi,yhi,phi]] spanning the voxel *centres*
+        # (measured: a 32-voxel / 217.7 A brick reports 210.9 A = 31 intervals), so the
+        # voxel-index -> XYZ map is lo + idx/(N-1)*(hi-lo), no half-voxel shift.
+        ext = np.array(cmd.get_extent("density_map"), dtype=float)
+        idx = np.argwhere(m["data"] > level)
+        if ext.shape == (2, 3) and len(idx):
+            frac = idx / (np.array(m["data"].shape)[None, :] - 1.0)
+            xyz = ext[0] + frac * (ext[1] - ext[0])
+            for p in np.vstack([xyz.min(0), xyz.max(0),
+                                xyz[[xyz[:, 0].argmax(), xyz[:, 0].argmin()]],
+                                xyz[[xyz[:, 1].argmax(), xyz[:, 1].argmin()]],
+                                xyz[[xyz[:, 2].argmax(), xyz[:, 2].argmin()]]]):
+                cmd.pseudoatom("envelope_box", pos=[float(v) for v in p])
+            cmd.hide("everything", "envelope_box")
+            cmd.zoom("envelope_box or sample", args.zoom_buffer)
+            cmd.delete("envelope_box")
+            framed = True
+    if not framed:
         have = set(cmd.get_names("objects"))
         drawn = [n for n in ("sample", "beads") if n in have]
         cmd.zoom(" or ".join(drawn) if drawn else "all", args.zoom_buffer)
-    if args.frame_margin != 1.0:
-        v = list(cmd.get_view())
-        for i in (9, 10, 11):
-            v[i] *= args.frame_margin
-        cmd.set_view(v)
     cmd.ray(args.size, args.size)
     cmd.png(args.out_png, dpi=150)
     if not args.no_pse:
