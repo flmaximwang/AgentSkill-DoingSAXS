@@ -159,7 +159,14 @@ def read_sample_meta(sample_dir):
         if meta.get("trusted_from_ranges") is not None:
             # SEC 流水线：行里没有 trusted 字段，区间是否成功记在 series/ranges.json
             meta["trusted"] = bool(meta["trusted_from_ranges"])
-    meta["dat"] = os.path.join(sample_dir, "profiles", "03_subtracted", "subtracted.dat")
+    # 样品平均曲线：管式流水线写 profiles/03_subtracted/subtracted.dat；SEC 流水线只把逐帧扣减写在
+    # 03_subtracted/S_*_sub.dat，它喂给 GNOM/IFT 的是 profiles/04_sample/sample_avg.dat。两套都要认。
+    dat_cands = ("profiles/03_subtracted/subtracted.dat",
+                 "profiles/04_sample/sample_avg.dat",
+                 "profiles/03_subtracted/sample_avg.dat")
+    meta["dat"] = next((os.path.join(sample_dir, c) for c in dat_cands
+                        if os.path.exists(os.path.join(sample_dir, c))),
+                       os.path.join(sample_dir, dat_cands[0]))
     meta["density_map"] = None
     # 密度图命名有两套：管式流水线写 models/denss.mrc；SEC 流水线写 models/<前缀>_denss.mrc。
     # 两套都要认（否则 SEC 样品会被判成"没有电子云"），且都取 final map、不要 _support。
