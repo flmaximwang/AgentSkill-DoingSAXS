@@ -181,6 +181,16 @@ related_skills:
 
 1. **确认两个靶子在不在、是不是同一批产物。** 看样品目录：`models/denss.mrc`（电子云）、`models/*damfilt*|*damaver*`（已有珠模型）、`profiles/03_subtracted/subtracted.dat` + `tables/ift_summary.json`（代建珠模型用）。
    完成标准：能说出"电子云有/没有、珠模型有/没有、代建时用哪条可信 IFT"。判停点：电子云没有且不打算建 → 只做珠模型分支，并把"没有电子云"写进结果（本次 A5-05-3/4/5 就是这样）。
+1b. **先确认"用哪个分子状态"——这一步比叠合参数重要得多。** 把模型的 CA-Rg 与上游 P(r) 的 Rg 比一下
+   （`scripts/split-cif-chains.py <file>.cif --list` 先看有几条链）：
+   - 多聚体模型 vs 单体样品（本机 4LI2-676 实测）：三聚体（A/B/C 三条 ~900 原子的链）模型 Rg **25.7 Å**，
+     而 SAXS 是 Rg 16.2 Å / Dmax 50 Å / MW 9.5–13.3 kDa → 模型大 1.6 倍，于是 NSD 1.42、CA→最近 bead
+     中位 11.5 Å、只有 42% 在 8 Å 内、fitmap correlation 只有 0.53–0.61。**这不是"叠得不准"，是状态不对**；
+     拆出与 SAXS 尺寸相符的那条链（`4LI2-676_A.cif`，~120 残基 ≈ 13.5 kDa）重跑才有意义。
+   - 反过来：模型偏小时同样要先定状态（本机 4DH1-KDPV-ZN：单体模型 Rg 14.6 Å vs SAXS Rg 25.2 Å）。
+   - 约定：`models/` 里**只留拆好的结构**（`<stem>_<链>.cif`），别把整条多聚体文件留在里面当默认输入。
+   - 注意这只是尺寸相符性，**不判"模型对不对"**（那要 CRYSOL/PDB2SAS 拟合）；本步只保证嵌进包络的是同一个状态。
+   完成标准：能说出"用哪条链、它的 Rg/MW 与 SAXS 的对得上多少"。
 2. **读上游决定（只有代建珠模型时才需要）。** 从 `tables/ift_summary.json` 取 `chosen` 那条 run 的 `idx_min/qmax/dmax/rg` 与 `trusted`。
    完成标准：能报出用哪个 q 窗口、Dmax/Rg 是多少、是不是可信。判停点：`trusted=false` → 照建但把 `warning` 写进结果，并把 NSD 定性为"仅指示"。
 3. **（代建时）GNOM → DAMMIF ×N → DAMAVER。** `gnom(profile, dmax, rg=…)` 走 RAWAPI（**不要**用 `datgnom` 代替，它没有 Dmax 参数）；DAMMIF 默认 **15** 个（Fast 试、Slow 出终稿），DAMAVER 平均后**取 `-global-damfilt`**（滤过平均=最可能模型）。
@@ -234,7 +244,9 @@ related_skills:
 - 引用要求：用 CIFSUP 替代 SUPCOMB 时引 SUPCOMB 原文（M. Kozin & D. Svergun (2001) *J Appl Cryst* 34, 33-41）；用 DENSS 图时引 T. D. Grant *Nature Methods* (2018) 15, 191-193；用 ChimeraX 时引其论文。
 
 **参考文件**：CIFSUP/fitmap 的完整参数表、CSV 列名、RAWAPI 调用式、以及本次 6 个样品的实跑数字见
-`references/bead-and-density-embedding-parameters.md`。可执行入口：`scripts/embed-model.py`（一条命令跑完两条分支）、`scripts/render-embed-figure.py`（PyMOL 出图）。
+`references/bead-and-density-embedding-parameters.md`。可执行入口：`scripts/embed-model.py`（一条命令跑完两条分支）、
+`scripts/render-embed-figure.py`（PyMOL 出图）、`scripts/write-embed-readme.py`（出人看的 README）、
+`scripts/split-cif-chains.py`（按 `label_asym_id` 把多聚体 CIF 拆成 `<stem>_<链>.cif`，`--list` 只看链与原子数）。
 
 ## 相关 skills
 
