@@ -17,7 +17,11 @@
 > **状态**：已 push 到 <https://github.com/flmaximwang/AgentSkill-DoingSAXS>（**public**，远程用 SSH，default=main）；
 > 已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，scan verdict **SAFE**）：
 > `assess-saxs-raw-data-quality`（pin `eff1219`）、`run-a-sec-saxs-pipeline-end-to-end`（pin `fc148f6`）。
-> 另：`embed-a-model-in-bead-and-density-models`（pin 见下一行安装记录）——README 索引、安装命令、运行前提、边界表均已收录。
+> `embed-a-model-in-bead-and-density-models` 同期并入同一 `saxs` 类目（pin `f6c48ad`，2026-10-01）。
+> 注意它的 scan verdict 是 **CAUTION**：`scripts/embed-model.py` 命中 skills-guard 的 `python_os_environ` 与
+> `python_subprocess` 两条规则（2×HIGH exfiltration on `os.environ`、3×MEDIUM execution on `subprocess`），
+> 因此按既有先例用 `--force` 安装。命中项的实质是**本机可执行文件调用**（ATSAS `cifsup`、ChimeraX、PyMOL），
+> 无网络、无外发；安装后 `diff -rq` 与仓库逐字节一致。
 > 后者并入时另加了一项交付物：**结果目录里自动写 `README.md`**（只读产物、不重算；见该 skill 的 Step 4）。
 
 ## 索引
