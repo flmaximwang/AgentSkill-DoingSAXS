@@ -120,7 +120,15 @@ def build(d):
     if df.get("fits"):
         A("- `fitmap_r<RR>.csv` / `.log` —— 每个 resolution 下 fitmap 的**全部唯一解**：旋转/平移矩阵 + correlation / cam / overlap / average_map_value / steps / shift / angle")
         A("- `*_in_density_r<RR>.pdb` —— 该 resolution 下最好的那个摆法（**在电子云坐标系里**）")
-    A("- `embed_beads.png`（珠模型坐标系）/ `embed_density.png`（电子云坐标系）—— 两张图**故意分开**：两个靶子各自居中在各自原点，相对取向没有数据约束，混画会得到\"模型戳出珠球\"的假象")
+    figs = d.get("figures") or {}
+    if figs:
+        # 图名来自 embed_results.json 的 figures（随模型文件名走，如 4DH1-KDPV_in_beads.png）
+        beads_png = os.path.basename(figs.get("beads") or figs.get("bead") or "")
+        dens_png = os.path.basename(figs.get("density") or "")
+    else:
+        beads_png, dens_png = "embed_beads.png", "embed_density.png"
+    A("- `%s`（珠模型坐标系）/ `%s`（电子云坐标系）—— 两张图**故意分开**：两个靶子各自居中在各自原点，相对取向没有数据约束，混画会得到\"模型戳出珠球\"的假象"
+      % (beads_png or "embed_beads.png", dens_png or "embed_density.png"))
     A("")
     A("## 3. 判据（本目录的数字该怎么读）")
     A("")
