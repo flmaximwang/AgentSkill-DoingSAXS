@@ -1,6 +1,6 @@
 {
   "skill": "run-a-sec-saxs-pipeline-end-to-end",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "test_cases": [
     {
       "id": "should-trigger-01",

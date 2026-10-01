@@ -152,3 +152,31 @@
 - 正面 #3/#5 的漏判（见 §2 代价）——按"两三轮即停"记录，不再调参。
 - 谷底**未回基线**的未解析重叠峰**不**在流水线里硬切区间 → 转 `deconvolve-overlapping-elution-peaks`。
   这是设计边界，不是遗留缺陷。
+
+---
+
+## 5. darwin 优化（2026-10-02，Darwin 2.1 / 9 维 rubric + paired 多数决）
+
+**基线 81.0**（dim1 9 · dim2 9 · **dim3 6** · **dim4 4** · dim5 9 · dim6 9 · dim7 8 · dim8 9 · dim9 7）——
+dim8 用**真跑对照**打分：两个独立子代理，一个带 SKILL.md 一个不带，跑同一条真实需求
+（4EH2 端到端 + 两峰各自一套 + 峰内 Rg-浓度关系）。带 skill 臂胜在：一条命令（vs 11 步手写 Python）、
+实测锚点（`--trim-qmax 0.15`、`qRg0.3-0.6 r²=0.038`、69→112 帧）、多峰产物契约与验收命令；
+**并且带 skill 臂抓出一处事实错误**（SKILL.md 把 `4EH2-KDPV-ZN` 写成“445 帧、无 txt”，会把读者导向
+`--no-header-normalization` 白丢逐帧归一化）→ 单独 `f2975df` 修掉（消歧两个下机批次）。
+
+| 轮 | 维度 | 改动 | paired 判定 | 结果 |
+|---|---|---|---|---|
+| 1 | dim3 失败模式编码 | 新增「出问题时怎么办」**if-then 三段式故障表 14 条**（触发原话 → 一线修复 → 仍失败兜底 + 必须写进 README）+ Step 0 失败分支 | **3-0 better**（1 clear / 2 slight） | keep `692c96f` |
+| 2 | dim4 检查点 | 新增**六道 🔴 STOP 闸门表**（位置 / 要确认什么看哪个文件 / 不满足就停在哪里做什么）+ Step 1/3/4 内联 🔴 | **3-0 better**（3 slight） | keep `498a981` |
+| 3 | dim7 冗余 | 把「坑」段中与故障表重复的 12 条压成一行指针 | **3-0 worse** | **revert `ae3f07f`** |
+
+**终评 87.6**（dim3 6→9、dim4 4→9；其余不变；体积 47.7→54.9 KB）。绝对分只作 triage，keep 依据是 paired 多数决。
+
+**第 3 轮为什么被判 worse（= 这次去重是假改进，值得记）**：judge 逐条点名了三个真实退化——
+① 正则把 `## 相关 skills` **标题一起吃掉**，末尾 8 条相关技能成了「多峰相关的坑」的孤儿条目；
+② 删掉的并不都是重述：`frame_params` 的 69→112 帧、`calc_thresh 1.02`、DENSS 的 `Rg 15.9 Å / Dmax 189–357 Å`、
+`--buffer-range "60,220;400,445"` 示例、ATSAS 下载链接，都是故障表**没有**的内容；
+③ 新写了一个**错命令** `write-readme.py --out <目录>`（该脚本只吃位置参数）。回滚后与 round 2 结束态逐字节一致。
+
+**中断原因**：HL-4 —— 第 2、3 轮 judge 多数判 `slight`，停止加轮，避免为了凑分增冗余。
+账本：`~/.hermes/skills/agent-evolution/darwin-skill/results.tsv`（本 skill 共 5 行：baseline / fact_fix / dim3 / dim4 / dim7-revert / post）。
