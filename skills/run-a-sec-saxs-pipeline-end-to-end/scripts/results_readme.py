@@ -332,8 +332,8 @@ def _mark_chi2(chi, kind="dammif"):
     if chi is None:
         return "—"
     if kind == "denss":
-        return "✅ 可用" if chi <= 3 else ("🟡 有限" if chi <= 6 else "❌ 该重建不达标")
-    return "✅ 可用" if chi <= 3 else ("🟡 有限" if chi <= 5 else "❌ 不可用（先修曲线，不是调重建参数）")
+        return "🟢 可用" if chi <= 3 else ("🟡 有限" if chi <= 6 else "🔴 该重建不达标")
+    return "🟢 可用" if chi <= 3 else ("🟡 有限" if chi <= 5 else "🔴 不可用（先修曲线，不是调重建参数）")
 
 
 def _shape_facts(d):
@@ -387,13 +387,13 @@ def _summary_block(d, prefix):
     # ---- 数据可用性
     if rg and rg > 0:
         if rsq is not None and rsq >= 0.99 and (spread is None or spread <= 5):
-            usable = "✅ 可用"
+            usable = "🟢 可用"
         elif rsq is not None and rsq >= 0.95 and (spread is None or spread <= 15):
             usable = "🟡 有限可用（低 q 仍有可疑成分）"
         else:
-            usable = "❌ 不可用/存疑"
+            usable = "🔴 不可用/存疑"
     else:
-        usable = "❌ 无可用 Rg（Guinier 全部未收敛）"
+        usable = "🔴 无可用 Rg（Guinier 全部未收敛）"
 
     A("## 0. 总结")
     A("")
@@ -480,31 +480,31 @@ def _all_params(d, prefix):
 
     A("## 1. 全参数表")
     A("")
-    A("> 「程序误差」= RAW/ATSAS 自己返回的那一列误差；「能不能用」= ✅ 可用 / 🟡 有限 / ❌ 不可用；"
+    A("> 「程序误差」= RAW/ATSAS 自己返回的那一列误差；「能不能用」= 🟢 可用 / 🟡 有限 / 🔴 不可用；"
       "最后一列写清这条误差**读得懂什么、读不懂什么**。数字全部从产物文件现读（出处见「环节」列对应的表/文件）。")
     A("")
     A("| 环节 | 参数 | 值 | 程序误差 | 能不能用 | 误差 / 不确定度怎么读 |")
     A("|---|---|---|---|---|---|")
 
     # --- 积分 / 归一化
-    A(f"| 积分 | 帧数 | {meta.get('n_frames', d['n_integrated'])} | — | ✅ | 帧数足够，统计量不虚 |")
+    A(f"| 积分 | 帧数 | {meta.get('n_frames', d['n_integrated'])} | — | 🟢 | 帧数足够，统计量不虚 |")
     norm_txt = "已启用（`NormalizationList=[['/','Transmitted_Beam']]`）" if st_raw.get("EnableNormalization") \
         else "**未启用**（无 txt/监视器）"
     A(f"| 归一化 | 逐帧归一化 | {norm_txt} | — | "
-      f"{'✅' if st_raw.get('EnableNormalization') else '🟡'} | "
+      f"{'🟢' if st_raw.get('EnableNormalization') else '🟡'} | "
       f"{'因子只含束流波动，不含几何漂移 —— 后者看 video/*.centroid.csv' if st_raw.get('EnableNormalization') else '束流起伏留在曲线里；低 q 与绝对刻度不可信'} |")
     rng_b = (d["ranges"] or {}).get("buffer") or []
     rng_s = (d["ranges"] or {}).get("sample") or []
     if rng_b or rng_s:
         A(f"| 扣减 | buffer / 样品区（0 基帧号） | "
           f"buffer {'、'.join(f'{a}–{b}' for a, b in rng_b) or '—'}；样品 "
-          f"{'、'.join(f'{a}–{b}' for a, b in rng_s) or '—'} | — | ✅ | "
+          f"{'、'.join(f'{a}–{b}' for a, b in rng_s) or '—'} | — | 🟢 | "
           f"峰前+峰后两段 buffer 能吃掉基线漂移；只用一段时 SEC 峰后的基线常不等于峰前 |")
 
     # --- Guinier
     if rg and rg > 0:
-        verdict = ("✅ 可用" if (rsq is not None and rsq >= 0.95 and (spread is None or spread <= 15))
-                   else "❌ 存疑")
+        verdict = ("🟢 可用" if (rsq is not None and rsq >= 0.95 and (spread is None or spread <= 15))
+                   else "🔴 存疑")
         A(f"| Guinier（采用 `{g_primary.get('range_label')}`） | Rg | {_fmt(rg)} Å | "
           f"± {_fmt_err(g_primary.get('rg_err'))} Å | {verdict} | "
           f"该误差是**区间内最小二乘标准误差**：区间收窄它必然变小，**不代表更准**；"
@@ -513,7 +513,7 @@ def _all_params(d, prefix):
           f"{verdict} | 同上；且 I(0) 与浓度耦合，SEC 里浓度未知 → 不能当绝对量 |")
         A(f"| Guinier（同上） | 拟合区间 / qRg / r² | q {_fmt(g_primary.get('q_min'),4)}–{_fmt(g_primary.get('q_max'),4)} Å⁻¹ / "
           f"{_fmt(g_primary.get('qRg_min'))}–{_fmt(g_primary.get('qRg_max'))} / {_fmt(rsq,5)} | — | "
-          f"{'✅' if (rsq or 0) >= 0.99 else '🟡'} | 判据：qRg 下界 ≳0.3、上界按形状（球 ≈1.3）、r² ≥0.99 很好；"
+          f"{'🟢' if (rsq or 0) >= 0.99 else '🟡'} | 判据：qRg 下界 ≳0.3、上界按形状（球 ≈1.3）、r² ≥0.99 很好；"
           f"`rg=-1`/`r²<0` 是**失败哨兵**，别当数字 |")
     for r in d["guinier"]:
         if r is g_primary:
@@ -521,13 +521,13 @@ def _all_params(d, prefix):
         lbl, rgg, rs = r.get("range_label"), _num(r.get("rg")), _num(r.get("r_sqr"))
         if lbl == "auto":
             A(f"| Guinier（`auto`，交叉核对） | Rg | {_fmt(rgg)} Å | ± {_fmt_err(r.get('rg_err'))} Å | "
-              f"{'✅ 一致' if (rg and rgg and abs(rgg-rg)/rg <= 0.05) else '🟡 与采用区间有小差异'} | "
+              f"{'🟢 一致' if (rg and rgg and abs(rgg-rg)/rg <= 0.05) else '🟡 与采用区间有小差异'} | "
               f"RAW 自动选的区间，只作参考；r²={_fmt(rs,5)} |")
         elif rgg is not None and rgg < 0:
-            A(f"| Guinier（`{lbl}`） | Rg | 未收敛 | — | ❌ 不可用 | "
+            A(f"| Guinier（`{lbl}`） | Rg | 未收敛 | — | 🔴 不可用 | "
               f"`rg=-1` 是 RAW 的**失败哨兵**（区间点数不足/低 q 上翘把拟合带跑）；r²={_fmt(rs,5)} |")
         elif rs is not None and rs < 0.9:
-            A(f"| Guinier（`{lbl}`） | Rg | {_fmt(rgg)} Å | ± {_fmt_err(r.get('rg_err'))} Å | ❌ 不可用 | "
+            A(f"| Guinier（`{lbl}`） | Rg | {_fmt(rgg)} Å | ± {_fmt_err(r.get('rg_err'))} Å | 🔴 不可用 | "
               f"r²={_fmt(rs,5)}（<0.9，拟合比取平均还差）→ 这段 q 不服从 Guinier 定律 |")
 
     # --- IFT 各支
@@ -540,11 +540,11 @@ def _all_params(d, prefix):
         if ratio is None:
             mark, why = "🟡 无法判", "Guinier 无可用 Rg，无法比 Dmax/Rg"
         elif ratio <= 3.2:
-            mark, why = "✅ 可用" if (ch is None or ch <= 3) else "🟡 有限", f"Dmax/Rg={ratio:.1f} 量级正常"
+            mark, why = "🟢 可用" if (ch is None or ch <= 3) else "🟡 有限", f"Dmax/Rg={ratio:.1f} 量级正常"
         elif ratio <= 4.5:
             mark, why = "🟡 有限", f"Dmax/Rg={ratio:.1f} 偏大，P(r) 尾部可疑"
         else:
-            mark, why = "❌ 不可用", f"Dmax/Rg={ratio:.1f} 明显被低 q 拖大 → 这一支的 P(r)/重建别用"
+            mark, why = "🔴 不可用", f"Dmax/Rg={ratio:.1f} 明显被低 q 拖大 → 这一支的 P(r)/重建别用"
         src = {"GNOM": "ATSAS GNOM（自动定 Dmax）", "BIFT": "RAW BIFT", "DIFT": "RAW DIFT（显式 Dmax）"}.get(m, m)
         A(f"| IFT（{src}） | Dmax | {_fmt(dd)} Å | {'± ' + _fmt_err(dde) + ' Å' if dde else '—'} | {mark} | "
           f"{why}；χ²={_fmt(ch,2)}；Dmax 是搜索/支撑上限，**没有误差棒时别当精确值** |")
@@ -556,14 +556,14 @@ def _all_params(d, prefix):
             else:
                 same = "—"
             A(f"| IFT（同上） | Rg（实空间，来自 P(r)） | {_fmt(rr)} Å | ± {_fmt_err(re_)} Å | "
-              f"{'✅' if mark.startswith('✅') else ('🟡' if mark.startswith('🟡') else '❌')} | "
+              f"{'🟢' if mark.startswith('🟢') else ('🟡' if mark.startswith('🟡') else '🔴')} | "
               f"{same}；这个误差棒**不含** Dmax 选错带来的偏差 |")
 
     # --- 分子量
-    mw_spec = [("Vc", "kDa", "体积不变假设（vcor）", "✅ 可用（与 Vp 差 ≤20%）或 🟡"),
+    mw_spec = [("Vc", "kDa", "体积不变假设（vcor）", "🟢 可用（与 Vp 差 ≤20%）或 🟡"),
                ("Vp", "kDa", "Porod 体积", "🟡 有限（无误差棒）"),
-               ("Bayesian", "kDa", "ATSAS DATMW（贝叶斯）", "✅ 可用"),
-               ("Datclass", "kDa", "ATSAS DATCLASS", "✅ 参考")]
+               ("Bayesian", "kDa", "ATSAS DATMW（贝叶斯）", "🟢 可用"),
+               ("Datclass", "kDa", "ATSAS DATCLASS", "🟢 参考")]
     vc = _num((mw.get("Vc") or {}).get("mw"))
     for name, unit, src, mark_default in mw_spec:
         r = mw.get(name)
@@ -575,7 +575,7 @@ def _all_params(d, prefix):
         read = ""
         if name == "Vc":
             rel = abs(v - (_num((mw.get("Vp") or {}).get("mw")) or v)) / v * 100 if v else None
-            mark = "✅ 可用" if (d2 and v and d2 / v <= 0.2 and (rel is None or rel <= 20)) else "🟡 有限"
+            mark = "🟢 可用" if (d2 and v and d2 / v <= 0.2 and (rel is None or rel <= 20)) else "🟡 有限"
             err = f"± {_fmt_err(d2)} kDa"
             read = (f"误差 = RAW 的经验不确定度（Vcor 传播），**不含**经验系数的系统偏差；"
                     f"qmax={_fmt(d3,3)} Å⁻¹；与 Vp 差 {_fmt(rel,0)}%")
@@ -584,12 +584,12 @@ def _all_params(d, prefix):
             read = (f"Porod 体积法**没有误差棒**；修正后体积 {_fmt(d1,0)} Å³；"
                     f"经验上比真实值高估 ~1.5×，只作数量级参考")
         elif name == "Bayesian":
-            mark = "✅ 可用"
+            mark = "🟢 可用"
             err = f"CI {_fmt(d2,1)}–{_fmt(d3,1)} kDa" if (d2 and d3) else "—"
             read = (f"ATSAS 的置信区间（区间外概率 {_fmt(100 - (d4 or 0),0)}%）；"
                     f"曲线质量差时区间会张得很开 → 看宽度判可用性")
         else:
-            mark, err = "✅ 参考", "—"
+            mark, err = "🟢 参考", "—"
             read = f"DATCLASS 同时给形状分类（{r.get('detail1')}）与 Dmax={_fmt(d2,1)} Å"
             v = _num(v)
         A(f"| 分子量（{name}） | MW | {_fmt(v,1)} {unit} | {err} | {mark} | {read} |")
@@ -602,7 +602,7 @@ def _all_params(d, prefix):
           + (f"，与 Guinier 差 {100*abs(sh['denss']['rg']-rg)/rg:.0f}%" if (rg and sh['denss']['rg']) else "")
           + f"；support {_fmt(sh['denss']['vol'],0)} Å³、盒子 {_fmt(sh['denss']['side'],1)} Å |")
     else:
-        A("| 形状重建（DENSS） | 电子云 | 未产出 | — | ❌ 缺 | 没跑 `shape` 步，或 DENSS 失败（看 `models/*_denss.log`） |")
+        A("| 形状重建（DENSS） | 电子云 | 未产出 | — | 🔴 缺 | 没跑 `shape` 步，或 DENSS 失败（看 `models/*_denss.log`） |")
     if sh["dammif_chi2"]:
         A(f"| 形状重建（DAMMIF×{sh['dammif_n']}） | χ² | {_fmt(sh['dammif_chi2'][0],2)}"
           f"（{_fmt(sh['dammif_chi2'][0],2)}–{_fmt(sh['dammif_chi2'][1],2)}） | — | "
@@ -617,7 +617,7 @@ def _all_params(d, prefix):
         if cl > 1:
             mark = "🟡 分簇（形状未定）"
         else:
-            mark = "✅ 一致" if sh["damaver_mean"] <= 2 else ("🟡 尚可" if sh["damaver_mean"] <= 3 else "❌ 形状未定")
+            mark = "🟢 一致" if sh["damaver_mean"] <= 2 else ("🟡 尚可" if sh["damaver_mean"] <= 3 else "🔴 形状未定")
         extra = f"；分成 {cl} 个 cluster（>1 = 模型没收敛到同一形状）" if cl > 1 else "；单一 cluster"
         A(f"| 一致性（DAMAVER） | 平均 NSD | {_fmt(sh['damaver_mean'],2)} | ± {_fmt_err(sh['damaver_std'])} | {mark} | "
           f"这是**模型两两之间的差异**（± 是模型间标准差），**不是**与实验数据的拟合误差；"
