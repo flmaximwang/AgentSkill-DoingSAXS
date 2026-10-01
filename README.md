@@ -35,7 +35,7 @@
 | skill | 安装 pin | scan verdict | 安装时内容哈希 |
 |---|---|---|---|
 | `assess-saxs-raw-data-quality` | `eff1219` | safe | `sha256:a9d3d37700dc7b9f` |
-| `run-a-sec-saxs-pipeline-end-to-end` | `9e0a1a2` | safe（`sec_peaks.py` 命中 `string_reversal` 的 LOW 提示，实为 `[::-1]` 排序，判 ALLOWED） | —（本轮新增 `sec_peaks.py`/`find-sec-peaks.py`、删 `results_readme.py`/`write-results-readme.py`，哈希口径见 `hermes skills check`） |
+| `run-a-sec-saxs-pipeline-end-to-end` | `1756d76` | safe（`sec_peaks.py` 命中 `string_reversal` 的 LOW 提示，实为 `[::-1]` 排序，判 ALLOWED） | —（本轮新增 `sec_peaks.py`/`find-sec-peaks.py`、删 `results_readme.py`/`write-results-readme.py`，哈希口径见 `hermes skills check`） |
 | `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
 | `write-saxs-results-readme` | `f45c923` | safe | —（本轮把 `test-results.md` 加进技能目录，哈希口径见 `hermes skills check`） |
 | `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
@@ -111,6 +111,10 @@ python <write-saxs-results-readme>/scripts/verify-results-folder.py <结果目�
 | 1 | `run-a-sec-saxs-pipeline-end-to-end`（**多峰改造后**，21 个候选，9 条） | 6/9（正面 2/5 · 诱饵 **4/4**） | 6/9（正面 2/5 · 诱饵 **4/4**） | 新功能题 #6（两个洗脱峰各要一套）与新增诱饵 #7（未解析重叠峰）**两票都对**；但新头部把「逐帧归一化」挤出了 57 字符窗口 → 正面 #3（逐帧归一化）、#8（视频）两票丢给兄弟 skill → **改头重测** |
 | 2 | 同上，头部改为「（图像→报告）：多峰逐峰分析、逐帧归一化（BL19U2 header txt）」 | **8/9**（正面 4/5 · 诱饵 **4/4**） | 6/9（正面 2/5 · 诱饵 **4/4**） | #3、#8 在 A 侧修回，但两评测者出现 2 处分歧（不稳定）、#5 两票仍丢 → 再试一版把 Guinier/视频也塞进窗口 |
 | 3（定稿） | 同上，头部改为「端到端跑一条 SEC-SAXS 系列：多峰逐峰分析、逐帧归一化、裁剪区视频、多区间 Guinier 表、IFT、分」 | **7/9**（正面 3/5 · 诱饵 **4/4**） | **7/9**（正面 3/5 · 诱饵 **4/4**） | 与第 2 轮同分（14/18）但**两评测者 9 题逐题完全一致**（可复现优先）；六类钩子都在窗口内；两条漏判（#3、#5）都落给**最像的兄弟 skill**（判据版有权接这两问）；**诱饵 3 轮×2 评测者 24/24 全对**（零误召）→ 按「两三轮即停」定稿，取舍与代价见该 skill 的 `test-results.md` |
+
+darwin 优化：`run-a-sec-saxs-pipeline-end-to-end` 2026-10-02 走完 9 维基线（81.0）→ 两轮 paired 3-0 keep
+（dim3 14 条 if-then 故障表 / dim4 六道 🔴 STOP 闸门）+ 一轮 paired 3-0 worse **revert**（dim7 去重被 judge 抓到
+吃掉节标题、删了故障表未覆盖的实测数字）→ **87.6**，记录见该 skill 的 `test-results.md` 第 5 节。
 
 darwin 优化：`compare-model-curve-with-existing-fits` 2026-10-02 走完 9 维基线（84.3）→ 三轮 paired 3-0 keep（dim3 if-then 故障表 / dim4 六道 🔴 STOP 闸门 / dim8 可粘命令+三段式回答，另修一处复审发现的示例不一致）→ 92.7，记录见该 skill 的 `test-results.md` 第 5 节。
 
