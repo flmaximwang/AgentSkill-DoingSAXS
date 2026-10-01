@@ -210,8 +210,10 @@ related_skills:
 
 > 每一步做完先过一眼 §🔴 检查点：五个停点（NSD>1 / 姿态散布>5 Å / 覆盖旧结果 / 重建珠模型 / 偏离默认口径）在那里必须停下报事实。
 
-1. **确认两个靶子在不在、是不是同一批产物。** 看样品目录：`models/denss.mrc`（电子云）、`models/*damfilt*|*damaver*`（已有珠模型）、`profiles/03_subtracted/subtracted.dat` + `tables/ift_summary.json`（代建珠模型用）。
-   完成标准：能说出"电子云有/没有、珠模型有/没有、代建时用哪条可信 IFT"。判停点：电子云没有且不打算建 → 只做珠模型分支，并把"没有电子云"写进结果（本次 A5-05-3/4/5 就是这样）。
+1. **确认两个靶子在不在、是不是同一批产物。**
+   输入：`<样品>/models/`（`denss.mrc`、`*damfilt*|*damaver*`）、`profiles/03_subtracted/subtracted.dat`、`tables/ift_summary.json`。
+   输出：一句靶子清单——电子云有/没有、珠模型有/没有、代建珠模型时用哪条可信 IFT。
+   判停点：电子云没有且不打算建 → 只做珠模型分支，并把"没有电子云"写进结果（本次 A5-05-3/4/5 就是这样）。
 1b. **先确认"用哪个分子状态"——这一步比叠合参数重要得多。** 把模型的 CA-Rg 与上游 P(r) 的 Rg 比一下
    （`scripts/split-cif-chains.py <file>.cif --list` 先看有几条链）：
    - 多聚体模型 vs 单体样品（本机 4LI2-676 实测）：三聚体（A/B/C 三条 ~900 原子的链）模型 Rg **25.7 Å**，
@@ -221,24 +223,40 @@ related_skills:
    - 反过来：模型偏小时同样要先定状态（本机 4DH1-KDPV-ZN：单体模型 Rg 14.6 Å vs SAXS Rg 25.2 Å）。
    - 约定：`models/` 里**只留拆好的结构**（`<stem>_<链>.cif`），别把整条多聚体文件留在里面当默认输入。
    - 注意这只是尺寸相符性，**不判"模型对不对"**（那要 CRYSOL/PDB2SAS 拟合）；本步只保证嵌进包络的是同一个状态。
-   完成标准：能说出"用哪条链、它的 Rg/MW 与 SAXS 的对得上多少"。
-2. **读上游决定（只有代建珠模型时才需要）。** 从 `tables/ift_summary.json` 取 `chosen` 那条 run 的 `idx_min/qmax/dmax/rg` 与 `trusted`。
-   完成标准：能报出用哪个 q 窗口、Dmax/Rg 是多少、是不是可信。判停点：`trusted=false` → 照建但把 `warning` 写进结果，并把 NSD 定性为"仅指示"。
-3. **（代建时）GNOM → DAMMIF ×N → DAMAVER。** `gnom(profile, dmax, rg=…)` 走 RAWAPI（**不要**用 `datgnom` 代替，它没有 Dmax 参数）；DAMMIF 默认 **15** 个（Fast 试、Slow 出终稿），DAMAVER 平均后**取 `-global-damfilt`**（滤过平均=最可能模型）。
-   完成标准：报出 GNOM 的 χ²/总估计、DAMMIF 各模型的 χ²/Rg/Dmax、DAMAVER 的 mean NSD±sd 与簇数、共识模型的 bead 数与 bead 半径。判停点：DAMMIF 的 Rg 与 P(r) 的 Rg 差很多、或 beads 数明显对不上体积 → 先回 `evaluate-a-shape-reconstruction`。
-4. **分支 1：CIFSUP 叠珠模型。** `cifsup --method=NSD --selection=REGRID -o <out>.cif <珠模型> <模型>`；**NSD 从输出文件的头部读**（`grep '^score'`，CIFSUP 没有 stdout）。
-   完成标准：拿到 `score`，并附上四个 selection 的对照（ALL/BACKBONE/REGRID/SHELL）与所用 selection/beads 参数。判停点：NSD > 1（系统性不同）时**不要**就此说"模型不对"，先做第 5 步的几何复核，再回 `fit-a-high-resolution-model-to-data` 判模型本身。
-5. **几何复核（一分钟，值得做）。** 数一下模型 CA 到最近 bead 的距离分布（中位数、8 Å 内的比例）。实跑参考：A5-05-1 中位数 2.2 Å、94% 在 8 Å 内。
-   完成标准：能说出"模型是落在珠球格子里，还是有一截在外面"。判停点：大面积在外面 → 先怀疑珠模型系综（第 3 步）而不是模型。
-6. **分支 2：fitmap 嵌电子云。** `fitmap #2 in #1 resolution <R> metric correlation search <N> seed <M> logFits <csv> listFits true`，然后 `save` 出被移动后的模型。跑一条 **R 阶梯**（10/15/20/25 Å），每个 R 都取 CSV 里最好的那一行。
-   完成标准：每个 R 都有 `correlation / correlation_about_mean / overlap / average_map_value / n_unique_fits / top3`。判停点：**没有 `resolution` 就会拿到 correlation=None**；`search 0` 只是局部优化，结果取决于初始位置——两者都不算做完了。
-7. **报"姿态散布"，不是报一个摆法。** 用各 R 下最好摆法的 CA 坐标两两算 RMSD（都在电子云坐标系里）。
-   完成标准：给出"最大散布 X Å + 对应的 R + 分数差"。判停点：散布 > 5 Å 且分数接近（实测 28.9 Å / 差 0.004）→ 结论必须写成"至少两个分数相当的不同摆法"，并说明 SAXS 包络本身不唯一。
-8. **出图（两张）+ 两张图各自的 `.pse`。** 珠模型坐标系一张（模型 + 白色半透明珠球）、电子云坐标系一张（模型 + 白色半透明 isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。样式固定：`sample` 黄色 cartoon、`beads`/`density` 半透明白色；**两张图各自独立渲染**（一条分支没有包络不该让另一条也丢掉图和会话）。
-   完成标准：每个存在的分支都有 `*_in_beads.png` + `*_in_beads.pse` / `*_in_density.png` + `*_in_density.pse`，且**回读 `.pse` 能看到逐对象设置**（`beads: sphere_transparency 0.9`、`density: transparency 0.7`、两个对象颜色分别是 white/yellow）；缺哪个面板就要在 `embed_results.json` 的 `figures.<面板>.status` 里写明原因。
-   已经跑过的目录补 `.pse` 用 `--figures-only`（读现成 `embed_results.json`，不重跑 CIFSUP/fitmap），几秒一个。
-9. **落盘并交付。** 每个样品一个 `_embed/<样品>/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figures`）、叠好的 PDB/CIF、fitmap CSV、两张 png、两个 pse；再写一份人看的 `README.md`（`write-embed-readme.py` 会把 pse 与渲染参数一起列出来）。
-   完成标准：别人只拿这些文件就能复述"用的哪条 q 窗口、哪个 selection、哪个 resolution、分数是多少、有没有第二个解"，并且能直接打开 `.pse` 接着改图。
+   输入：原始模型文件（`.pdb`/`.cif`）+ 上游 `tables/ift_summary.json` 的 Rg/Dmax/MW。
+   输出：一句状态判定——用哪条链、它的 CA-Rg/MW 与 SAXS 的对得上多少。
+2. **读上游决定（只有代建珠模型时才需要）。**
+   输入：`tables/ift_summary.json` 的 `chosen` 那条 run（`idx_min/qmax/dmax/rg`）与 `trusted` 标志。
+   输出：q 窗口 + Dmax/Rg + 可信与否（`trusted`）三项。
+   判停点：`trusted=false` → 照建但把 `warning` 写进结果，并把 NSD 定性为"仅指示"。
+3. **（代建时）GNOM → DAMMIF ×N → DAMAVER。**
+   输入：上一步的 q 窗口/Dmax/Rg + `profiles/03_subtracted/subtracted.dat`；`gnom(profile, dmax, rg=…)` 走 RAWAPI（**不要**用 `datgnom` 代替，它没有 Dmax 参数）；DAMMIF 默认 **15** 个（Fast 试、Slow 出终稿），DAMAVER 平均后**取 `-global-damfilt`**（滤过平均=最可能模型）。
+   输出：共识珠模型文件路径 + GNOM 的 χ²/总估计 + DAMMIF 各模型的 χ²/Rg/Dmax + DAMAVER 的 mean NSD±sd 与簇数 + bead 数与 bead 半径。
+   判停点：DAMMIF 的 Rg 与 P(r) 的 Rg 差很多、或 beads 数明显对不上体积 → 先回 `evaluate-a-shape-reconstruction`。
+4. **分支 1：CIFSUP 叠珠模型。**
+   输入：上一步的共识珠模型（template）+ 第 1b 步选定的模型（movable）；`cifsup --method=NSD --selection=REGRID -o <out>.cif <珠模型> <模型>`。
+   输出：叠好的 `.cif`/`.pdb` + `score`（NSD，**从输出文件头部读**：`grep '^score'`，CIFSUP 没有 stdout）+ 四个 selection 的对照（ALL/BACKBONE/REGRID/SHELL）。
+   判停点：NSD > 1（系统性不同）时**不要**就此说"模型不对"，先做第 5 步的几何复核，再回 `fit-a-high-resolution-model-to-data` 判模型本身。
+5. **几何复核（一分钟，值得做）。**
+   输入：CIFSUP 输出模型 + 珠模型坐标；数一下模型 CA 到最近 bead 的距离分布（中位数、8 Å 内的比例）。实跑参考：A5-05-1 中位数 2.2 Å、94% 在 8 Å 内。
+   输出：一句"落在珠球格子里 / 有一截在外面"的判定 + 中位数与 8 Å 内比例两个数。
+   判停点：大面积在外面 → 先怀疑珠模型系综（第 3 步）而不是模型。
+6. **分支 2：fitmap 嵌电子云。**
+   输入：`<样品>/models/denss.mrc` + 第 1b 步选定的模型；`fitmap #2 in #1 resolution <R> metric correlation search <N> seed <M> logFits <csv> listFits true`，然后 `save` 出被移动后的模型；跑一条 **R 阶梯**（10/15/20/25 Å）。
+   输出：每个 R 一行 `correlation / correlation_about_mean / overlap / average_map_value / n_unique_fits / top3` + 每个 R 最好的那个摆法的 pdb。
+   判停点：**没有 `resolution` 就会拿到 correlation=None**；`search 0` 只是局部优化，结果取决于初始位置——两者都不算做完了。
+7. **报"姿态散布"，不是报一个摆法。**
+   输入：第 6 步各 R 最好摆法的 CA 坐标（都在电子云坐标系里），两两算 RMSD。
+   输出："最大散布 X Å + 对应的 R + 与最高分的分数差"。
+   判停点：散布 > 5 Å 且分数接近（实测 28.9 Å / 差 0.004）→ 结论必须写成"至少两个分数相当的不同摆法"，并说明 SAXS 包络本身不唯一。
+8. **出图（两张）+ 两张图各自的 `.pse`。**
+   输入：第 4/6 步叠好的模型 + 珠模型文件/`.mrc`；珠模型坐标系一张（模型 + 白色半透明珠球）、电子云坐标系一张（模型 + 白色半透明 isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。样式固定：`sample` 黄色 cartoon、`beads`/`density` 半透明白色；**两张图各自独立渲染**（一条分支没有包络不该让另一条也丢掉图和会话）。
+   输出：每个存在的分支一份 `*_in_beads.png` + `*_in_beads.pse` / `*_in_density.png` + `*_in_density.pse`；缺哪个面板，`embed_results.json` 的 `figures.<面板>.status` 里写明原因。
+   验收：**回读 `.pse` 能看到逐对象设置**（`beads: sphere_transparency 0.9`、`density: transparency 0.7`、对象颜色 white/yellow）。
+   补图用 `--figures-only`（读现成 `embed_results.json`，不重跑 CIFSUP/fitmap），几秒一个。
+9. **落盘并交付。**
+   输入：前面各步的产物。每个样品一个 `_embed/<样品>/`：`embed_results.json`（含 `input/warning/bead_model/beads_fit/density_fit/figures`）、叠好的 PDB/CIF、fitmap CSV、两张 png、两个 pse；再写一份人看的 `README.md`（`write-embed-readme.py` 会把 pse 与渲染参数一起列出来）。
+   输出：一个自洽的结果目录 + 一段能复述结论的话（用的哪条 q 窗口、哪个 selection、哪个 resolution、分数多少、有没有第二个解），且能直接打开 `.pse` 接着改图。
 
 ## B — 边界 (Boundary)
 
