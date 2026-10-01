@@ -36,7 +36,7 @@
 | `assess-saxs-raw-data-quality` | `eff1219` | safe | `sha256:a9d3d37700dc7b9f` |
 | `run-a-sec-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:ba05a23c0de5b5ee` |
 | `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
-| `write-saxs-results-readme` | `bab2923` | safe | —（本轮把 `test-results.md` 加进技能目录，哈希口径见 `hermes skills check`） |
+| `write-saxs-results-readme` | `f45c923` | safe | —（本轮把 `test-results.md` 加进技能目录，哈希口径见 `hermes skills check`） |
 | `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
 | `compare-model-curve-with-existing-fits` | `17feeba` | caution | `sha256:fef50a862f8dfd97` |
 
