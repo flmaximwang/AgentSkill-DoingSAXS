@@ -1,0 +1,55 @@
+{
+  "skill": "run-a-sec-saxs-pipeline-end-to-end",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "把 /DataProcess/…/SEC-SAXS/bsa 这条 SEC-SAXS 系列端到端跑一遍：图像→归一化→扣减→Rg/MW→IFT→珠模→报告，全程用 RAW。",
+      "expected_behavior": "按 E 段四步走：① emit-bl19u2-header-txt.py 生成逐帧 BL19U2 header txt（写进源目录、与 tif 并排）② crop-video-normalized.py 出归一化裁剪视频（不落归一化 tif）③ run-raw-sec-pipeline.py（RAWAPI 全流程，各节点落 .dat）④ 复核 tables/guinier_multi_range.csv 等。强调归一化由 RAW 在积分时完成、不写归一化 tif。",
+      "notes": "正面场景：本 skill 的教科书式入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "这批 SEC 数据只有 .Iochamber 和采集日志，没有每帧的 txt，怎么在 RAW 里做逐帧归一化？",
+      "expected_behavior": "答：RAW 有 BL19U2 header 解析器（按 <图像名>.txt 找），settings 里 ImageHdrFormat='BL19U2, SSRF' + EnableNormalization=True + NormalizationList=[['/','Transmitted_Beam']] 就会逐帧除以该帧 txt 的 Transmitted_Beam；所以要补的是 txt，不是归一化 tif。用监视器按曝光窗口取中位数生成，注意行≠帧、开头 e-13 野值要丢。",
+      "notes": "正面场景：本 skill 的核心机制。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "跑完想自己判断拟合过程合不合适，能不能把不同数据范围都拟合一遍给我看？",
+      "expected_behavior": "答：多区间 Guinier —— 每个区间一份 profile 副本（setQrange 截到该区间）+ RAW 报告里各一幅，表里给 Rg/I0/误差/qRg 边界/r²；不传范围时以 auto_guinier 的 Rg 为锚铺 qRg 0.3–0.6…0.6–1.3 的阶梯，方便判断哪段才合适。判据细节转 assess-guinier-fit-quality。",
+      "notes": "正面场景：用户明确的验收条件。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "想看一眼束斑/样品在采集过程中有没有漂，做个小视频，顺便别把归一化后的 tif 写得到处都是。",
+      "expected_behavior": "crop-video-normalized.py：裁剪区（左下原点坐标换算 row=H-1-y）→ 读入时乘 median(TB)/TB_i → 固定灰阶窗口 → 8× 放大 + 烧帧号 → rawvideo 管道给 ffmpeg；副产物给逐帧 sum/质心 CSV。不开逐帧自动拉伸。",
+      "notes": "正面场景：视频 + 不落大文件。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "这条扣减完的曲线，Rg 取哪一段？q_max 该到多少？",
+      "expected_behavior": "走 assess-guinier-fit-quality（取点判据），不是流水线 skill。",
+      "notes": "诱饵类型：同一批数据，但问的是单点判据。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "扣减完基线还在往上抬，用 Linear 还是 Integral？",
+      "expected_behavior": "走 correct-sec-saxs-baseline（按漂移性质选校正方法）。",
+      "notes": "诱饵类型：流水线里有基线这一步，但方法选择归那条 skill。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "重建出来的珠子模型有一堆模型被剃掉了，平均 NSD 0.8 算好吗？",
+      "expected_behavior": "走 evaluate-a-shape-reconstruction（重建评估判据）。",
+      "notes": "诱饵类型：珠模是流水线的末端，但'能不能用'的判据归那条。"
+    }
+  ]
+}

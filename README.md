@@ -1,13 +1,14 @@
 # AgentSkill-DoingSAXS
 
-"做 SAXS 这件事本身"的 skill 包：**拟合之前先判数据**，以及出现怪现象时怎么把责任判给数据、几何还是模型。
-（下游的判据/流水线 skill 在 `AgentSkill-UsingBioXTASRAW`；这里放的是**评估与归因**。）
+"做 SAXS 这件事本身"的 skill 包：**拟合之前先判数据**，出现怪现象时怎么把责任判给数据、几何还是模型，
+以及**把一条 SEC-SAXS 系列端到端跑完**（图像 → 报告）并交付一份人能看懂的结果说明。
+（单点判据 skill 在 `AgentSkill-UsingBioXTASRAW`；这里放**评估/归因** + **SEC 端到端流水线**。）
 
 | 来源 | 内容 | 沉淀成 |
 |---|---|---|
 | 2026-10-01 管式批次（BL19U2，11 个样品：A5-05-1…6 稀释序列 + 5705/877-apo/877-4zinc/97df/BSA）的实跑 | 逐帧质量（漂移/离群/对比度/SNR/误差诚实度）、低 q 上翘的三道归因检验、beamstop 几何与 q_min 依据 | [`skills/assess-saxs-raw-data-quality/`](skills/assess-saxs-raw-data-quality/) |
 
-**1 个 skill**（24 个候选判据 → 通过 1 个原子技能）：真实数据上磨出来的一条流程——
+**2 个 skill**：1 个评估/归因原子技能（24 个候选判据 → 通过 1 个）+ 1 条端到端 SEC 流水线（工程产物）。前者的流程：：真实数据上磨出来的一条流程——
 **先量几何（中心/掩膜/q_min）→ 逐帧 QC → 扣减后形状 → 低 q 上翘归因（空白-空白 / 背景形状失配 / 2D 差分）→ 完整结论（排除了什么、还剩什么、下一步做什么实验）**。
 它**不做任何拟合**：拟合归 `AgentSkill-UsingBioXTASRAW` 的 15 个 skill，这里只判"那些拟合肥不肥"。
 
@@ -18,6 +19,7 @@
 
 | skill | 用途 | 可执行入口 |
 |---|---|---|
+| [run-a-sec-saxs-pipeline-end-to-end](skills/run-a-sec-saxs-pipeline-end-to-end/SKILL.md) | **端到端跑一条 SEC-SAXS 系列**（全程 RAW，不自写拟合）：逐帧归一化（补 BL19U2 header txt / 读线站已有 txt）→ 归一化裁剪视频 → buffer/sample 区与扣减 → 多区间 Guinier → IFT → MW → 形状重建（DENSS 电子云 + ATSAS DAMMIF 珠模 + DAMAVER）→ RAW PDF 报告 → **结果目录自动写 `README.md`**（目录导航 + 关键数字 + 判读红线 + 本次告警），每个节点都落 `.dat`/表格 | `references/bl19u2-header-normalization.md`、`scripts/`（5 个脚本：emit-bl19u2-header-txt / crop-video-normalized / run-raw-sec-pipeline / results_readme / write-results-readme） |
 | [assess-saxs-raw-data-quality](skills/assess-saxs-raw-data-quality/SKILL.md) | 一批 SAXS 原始帧的质量评估 + 低 q 上翘归因：先量几何与掩膜（含 RAW 读 Pilatus 的 **y 翻转**、beamstop 边缘 → `--qmin`），再逐帧判据表（对比度/漂移/离群/误差诚实度/SNR-qmax），再做三道归因（**空白-空白可复现极限**、**shape×电平**、**2D 差分：各向同性光晕 vs 紧贴 beamstop 的窄亮环**），最后按"浓度标度律"写出合格结论；含"单条曲线上翘 ≠ 相互作用"的判据与下一步实验设计 | `references/bl19u2-geometry-and-mask.md`、`references/upturn-attribution-protocol.md`、`scripts/`（5 个可执行脚本 + 1 个共用件） |
 
 ## 质量凭据（盲测）
@@ -35,9 +37,10 @@
 
 ```bash
 hermes skills install <owner>/AgentSkill-DoingSAXS/skills/assess-saxs-raw-data-quality --category saxs -y
+hermes skills install <owner>/AgentSkill-DoingSAXS/skills/run-a-sec-saxs-pipeline-end-to-end --category saxs -y
 ```
 
-更新：`hermes skills update assess-saxs-raw-data-quality`（改了本仓库并 push main 之后）。
+更新：`hermes skills update <skill 名>`（改了本仓库并 push main 之后）。
 
 ## 运行前提
 
@@ -51,6 +54,7 @@ hermes skills install <owner>/AgentSkill-DoingSAXS/skills/assess-saxs-raw-data-q
 | 问题 | 去哪 |
 |---|---|
 | 这批原始帧好不好 / 上翘是真还是假 / q_min 取多少 | **本包** |
-| 图像→曲线→Rg/P(r)/MW/3D 端到端跑一遍 | `AgentSkill-UsingBioXTASRAW` 的两条 pipeline skill |
+| **SEC 连续洗脱帧**图像→曲线→Rg/P(r)/MW/3D 端到端跑一遍 | **本包**（`run-a-sec-saxs-pipeline-end-to-end`） |
+| 管式/静态帧端到端跑一遍 | `AgentSkill-UsingBioXTASRAW` 的 `run-a-tube-saxs-pipeline-end-to-end` |
 | Guinier 怎么取点、P(r) 用哪个程序、MW 用哪一法、重建怎么评 | `AgentSkill-UsingBioXTASRAW` 的 13 个判据 skill |
 | ATSAS 命令行（GNOM/DAMMIF/DATMW…） | `AgentSkill-UsingATSAS` |
