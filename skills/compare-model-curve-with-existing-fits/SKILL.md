@@ -187,7 +187,7 @@ related_skills:
      --data /abs/曲线.dat --processed /abs/processed/<模式>/<样品> \
      --atsas-dir /Applications/ATSAS-4.1.4-1/bin --qmin 0.0067 --qmax 0.2592 --out /abs/产物目录
    ```
-   实测的控制台输出（本机 SEC 样例，逐行就是判据）：
+   实测的控制台输出（本机 SEC 样例，**未裁 q** —— 带 `--qmin/--qmax` 时只有第一行的 N 与 q 区间变成裁剪后的范围，其余行同形）：
    ```
    [data] …/data_used.dat  N=1150  q=0.00643–0.45386 Å⁻¹
    [crysol] 4DH2-676-apo-dimer: χ²(程序)=1.267 χ²(datcmp)=1.267 → 🟡
