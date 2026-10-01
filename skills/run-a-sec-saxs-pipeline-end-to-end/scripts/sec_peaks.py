@@ -805,11 +805,16 @@ def summary_lines(det):
     if not det['ok']:
         return [f"❌ 没有检测到洗脱峰：{det.get('reason','')}"]
     p0 = det['params']
-    lines = [f"检测到 **{len(peaks)} 个洗脱峰**（色谱图 = 扣减后 q "
-             f"{det['q_range'][0]}–{det['q_range'][1]} 1/Å 的积分强度；判据 = RAW 的 "
-             f"savgol 平滑 + find_peaks，阈值 prominence≥{p0['min_prominence']}（相对最高峰）、"
-             f"信噪比≥{p0['min_snr']}σ、半高宽≥{p0['min_width']} 帧"
-             f"（基线噪声 σ={det.get('noise_sigma', float('nan')):.3g}））"]
+    if det.get('manual_ranges'):
+        head = (f"峰窗口是**人工指定**的（--peak-ranges）：{fmt_ranges(det['manual_ranges'])}"
+                f"（不经过阈值判定；下列幅度/信噪比只是事后算出来的参照值）")
+    else:
+        head = (f"检测到 **{len(peaks)} 个洗脱峰**（色谱图 = 扣减后 q "
+                f"{det['q_range'][0]}–{det['q_range'][1]} 1/Å 的积分强度；判据 = RAW 的 "
+                f"savgol 平滑 + find_peaks，阈值 prominence≥{p0['min_prominence']}（相对最高峰）、"
+                f"信噪比≥{p0['min_snr']}σ、半高宽≥{p0['min_width']} 帧"
+                f"（基线噪声 σ={det.get('noise_sigma', float('nan')):.3g}））")
+    lines = [head]
     for p in peaks:
         r = ''
         if p['index'] < len(peaks) - 1:
