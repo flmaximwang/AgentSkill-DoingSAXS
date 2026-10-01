@@ -197,7 +197,26 @@ def step_ranges_and_subtraction(profiles, st, out, prefix, args, buffers=None, s
                              "或让它按 --peaks/--peak-ranges 逐峰自己挑 buffer。")
         b_ok, b_rng = bool(ok), [[int(s), int(e)]]
     log(f"buffer 区 {b_rng}（{'给定' if (buffers or args.buffer_range) else 'RAW 自动找'}, success={b_ok}）")
-    (sub_profiles, rg, rger, i0, i0er, vcmw, vcmwer, vpmw) = raw.set_buffer_range(series, b_rng)
+    # 「哪些帧参与逐帧 Rg/I0/MW 计算」由 RAW 的**可用帧标记**决定（SECM.subtractAllSASMs：
+    # 该帧强度 / buffer 平均强度 > 阈值 → 标记可用；SASCalc.run_secm_calcs 只对这些帧算）。
+    # 用的是哪种强度由 int_type 决定，而**总强度在 SEC 数据上被束位/通量漂移主导**——本机实测
+    # 4EH2-KDPV-ZN：用默认 int_type='total' 时只有 69/1500 帧被标记，且全是散落的噪声帧，
+    # 5 帧窗一个都凑不齐 → run_secm_calcs 返回的 rg/i0/vc/vp **全部是 -1**（表里看着像"算了，
+    # 只是值是 -1"，其实是根本没算）。改用**低 q 窗口积分强度**（与认峰同一个窗口）当标记强度，
+    # 峰帧立刻被标记 → 逐帧参数正常。这只是换 RAW 自己的判定口径，不碰扣减本身
+    # （subtractAllSASMs 里 int_type 只影响标记，扣减始终是 SASProc.subtract 的普通减）。
+    flag_kw = {}
+    flag_desc = "total（RAW 默认：总强度）"
+    if args.frame_flag_q and str(args.frame_flag_q).lower() not in ("none", "total", "off"):
+        try:
+            f0, f1 = (float(x) for x in args.frame_flag_q.split(","))
+            flag_kw = dict(int_type="q_range", q_range=[f0, f1])
+            flag_desc = f"q_range {f0:g}–{f1:g} 1/A（低 q 窗口积分强度，抗漂移）"
+        except ValueError:
+            log(f"  ！--frame-flag-q 解析不了（{args.frame_flag_q}）→ 用 RAW 默认的总强度口径")
+    (sub_profiles, rg, rger, i0, i0er, vcmw, vcmwer, vpmw) = raw.set_buffer_range(series, b_rng, **flag_kw)
+    log(f"逐帧参数的可用帧判定：{flag_desc} → 标记可用 {int((np.asarray(rg, float) != -1).sum())}"
+        f"/{len(rg)} 帧（其余帧的表值为 -1，是 RAW 的「未计算」哨兵）")
 
     buf_dir = os.path.join(out, "profiles", "02_buffer")
     buf_sasms = [s for r in b_rng for s in series.getSASMList(r[0], r[1], 'unsub')]
@@ -290,12 +309,20 @@ def step_ranges_and_subtraction(profiles, st, out, prefix, args, buffers=None, s
         for i in range(len(frames)):
             w.writerow([float(frames[i]), float(rg_a[i]), float(rger_a[i]), float(i0_a[i]), float(i0er_a[i]),
                         float(vc_a[i]), float(vcer_a[i]), float(vp_a[i]), float(int_a[i])])
+    n_params = int((rg_a > 0).sum())
+    if n_params == 0:
+        log("  ！逐帧 Rg/I0/MW **全是 -1**（RAW 一个可用帧都没标记 → 根本没算，不是算出来是负）："
+            "换 --frame-flag-q（默认低 q 窗口）或核对该峰的 buffer 区间是否太宽")
+    else:
+        log(f"  → 逐帧参数有值 {n_params}/{len(frames)} 帧（其余 -1 = RAW 未计算，"
+            f"图上表现为断线；判 Rg 平台只看有值的那些帧）")
     try:
         plot_series(out, frames, int_a, rg_a, i0_a, vc_a, vp_a, b_rng[0], s_rng[0], det=det)
     except Exception as exc:
         log(f"  ！series 图失败：{type(exc).__name__}: {exc}")
 
     ranges = dict(buffer=b_rng, sample=s_rng, profile_type=pt,
+                  frame_params_valid=n_params, frame_params_flag=flag_desc,
                   sample_range_success=s_ok, buffer_range_success=b_ok)   # type: dict
     if det is not None:
         ranges['detected_peaks'] = [dict(index=p['index'], apex=p['apex'], window=list(p['window']),
@@ -949,6 +976,11 @@ def main():
                          "（视觉复核后的落点；先用 find-sec-peaks.py 看图定区间）")
     ap.add_argument("--peak-buffers", default=None,
                     help="**人工**指定每个峰的 buffer 's,e;s,e|s,e'（'|' 分峰、';' 分段）；不给则按峰自动取")
+    ap.add_argument("--frame-flag-q", default="0.01,0.05",
+                    help="逐帧 Rg/I0/MW 的**可用帧判定**用哪段强度：RAW 默认按总强度（会被束位/通量漂移"
+                         "主导，实测能让 1500 帧里只有 69 个散落噪声帧被标记 → 逐帧参数全 -1）；"
+                         "这里默认用低 q 窗口积分强度 'qlo,qhi'（1/A，与认峰同一窗口，抗漂移）。"
+                         "传 none 回到 RAW 默认的总强度口径")
     ap.add_argument("--peak-q-range", default=None,
                     help="色谱图取的 q 窗口 'qlo,qhi'（1/A），默认 %g,%g——低 q 对组分敏感、"
                          "高 q 对噪声敏感" % sp.DEF_Q_RANGE if sp else "")

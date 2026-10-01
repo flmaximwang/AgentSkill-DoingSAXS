@@ -68,6 +68,10 @@ RAW 的 `savgol`/`find_peaks` 口径）→ ≥2 个峰就 `peaks/peakNN_apexNNNN
   「看图之前别引用数字」一节，并从中给出下一步（`--baseline`、`--peak-buffer-max`、换 buffer 段）；
 - `find-sec-peaks.py`（秒级、不重跑图像积分）改参数重看、`--sweep` 出阈值扫描图、
   `--peak-ranges/--peak-buffers` 把眼睛的结论写回主管线。
+- **逐帧参数（Rg/I0/MW）的"可用帧判定"另有开关**：RAW 默认按总强度判定，SEC 数据上会被束位/通量漂移
+  主导（实测 1500 帧只标记 69 个散落噪声帧 → 逐峰 `frame_params.csv` **整列 -1**，且不报错）。
+  流水线默认改用低 q 窗口积分强度（`--frame-flag-q "0.01,0.05"`，与认峰同一窗口），同一数据 P1
+  从 0 帧变 112 帧有值；要回到 RAW 默认口径传 `--frame-flag-q none`。
 
 边界：两峰之间**谷底没回到基线** = 未解析重叠，转 `deconvolve-overlapping-elution-peaks`（SVD/EFA/REGALS），
 不要在流水线里硬切区间。

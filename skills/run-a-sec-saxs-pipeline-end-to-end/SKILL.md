@@ -136,7 +136,7 @@ python crop-video-normalized.py --series-dir <tif 目录> --norm-csv <out>/norm/
 python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> --cfg <日期>.cfg \
   [--steps integrate,peaks,series,guinier,ift,mw,shape,report] \
   [--multi-peak auto|off|always] [--peak-ranges "lo,hi;lo,hi"] [--peak-buffers "s,e;s,e|s,e"] \
-  [--peak-q-range "qlo,qhi"] [--peak-min-prominence 0.2] [--peak-min-snr 5] \
+  [--peak-q-range "qlo,qhi"] [--frame-flag-q "qlo,qhi"|none] [--peak-min-prominence 0.2] [--peak-min-snr 5] \
   [--peak-buffer local|global] [--peak-buffer-max N] [--peak-sweep] \
   [--buffer-range "s,e[;s,e]"] [--sample-range s,e] [--baseline none|linear|integral] \
   [--trim-qmin q] [--trim-qmax q] \
@@ -451,6 +451,17 @@ python run-raw-sec-pipeline.py ... \
 - 视频的 `-pix_fmt rgb24` 必须与写进管道的字节一致（写 RGB 就声明 rgb24），否则帧数会变 3 倍。
 
 ### 多峰相关的坑（都是实测撞出来的）
+
+- **逐峰 `tables/frame_params.csv` 里 rg/i0/vc/vp 可能**整列都是 `-1`**，而且**不报错**：
+  RAW 只对"可用帧"算这些参数（`SECM.subtractAllSASMs`：该帧强度 / buffer 平均强度 > `calc_thresh`(1.02)
+  → 标记可用；`SASCalc.run_secm_calcs` 只对**连续 `window_size`(默认 5) 帧都被标记**的窗做计算）。
+  默认按**总强度**判定，而 SEC 数据的总强度被束位/通量漂移主导——本机实测 `4EH2-KDPV-ZN`：1500 帧里
+  只有 **69 帧**被标记、且全是散落的噪声帧 → 一个 5 帧窗都凑不齐 → `run_secm_calcs` 把 rg/i0/vc/vp
+  **全部写成 -1**。表里看着像"算了，只是值是负"，其实是**根本没算**（`SASCalc.py:2766` 的兜底），
+  而 `-1` 与"拟合失败"的哨兵值**长得一模一样**。处置：用 `--frame-flag-q "0.01,0.05"`（默认已开）
+  把判定换成**低 q 窗口积分强度**（与认峰同一窗口）→ 同一数据 P1 从 0 帧变 **112 帧有值**、
+  其中 34 帧落在 P1 自己的峰窗内，Rg 中位 24.0 Å（与它的 Guinier 24.3 Å 对得上）。
+  要回到 RAW 默认口径传 `--frame-flag-q none`。**看到逐帧参数整列 -1 先查这个，别去调 Guinier 区间。**
 
 - **RAW 自己只认最大的那个峰**：`SASCalc.findSampleRange()` 里 `max_peak_idx =
   np.argmax(peak_params['peak_heights'])`，`find_buffer_range` 也只用最大峰定搜索窗。

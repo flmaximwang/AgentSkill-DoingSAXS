@@ -627,18 +627,26 @@ def render_overview(path, det, series_arrays=None, title=None, axs=None):
     for k in range(3):
         ax = axs[k + 1]
         arrs = (series_arrays or {}).get(keys[k])
+        # 只有"真的有有限值"才画：全 NaN（逐峰参数没算出来 / RAW 全是 -1 哨兵）时画出来是空轴，
+        # 读者会把它当成"值≈0"。宁可明说没有，也不要留一个看起来像 0 的空面板。
+        drew = False
         if arrs:
             for lab, arr in arrs.items():
-                ax.plot(x, arr, lw=0.8, label=lab)
-            ax.legend(fontsize=8)
-        else:
-            ax.text(0.02, 0.5, 'no per-frame parameters (set_buffer_range not run / no ATSAS)',
+                a = np.asarray(arr, float)
+                if np.isfinite(a).any():
+                    ax.plot(x, a, lw=0.8, label=lab)
+                    drew = True
+            if drew:
+                ax.legend(fontsize=8)
+        if not drew:
+            ax.text(0.02, 0.5, 'no per-frame values (RAW computed none for this peak: '
+                               'all -1 / set_buffer_range not run)',
                     fontsize=8, transform=ax.transAxes, color='0.5')
         for p in det['peaks']:
             c = PEAK_COLORS[p['index'] % len(PEAK_COLORS)]
             ax.axvspan(p['window'][0], p['window'][1], color=c, alpha=0.13)
         ax.set_ylabel(labels[k], fontsize=9)
-        if k == 2:
+        if k == 2 and drew:
             ax.set_yscale('log')
         _style_ax(ax, xlabel=(k == 2))
 
