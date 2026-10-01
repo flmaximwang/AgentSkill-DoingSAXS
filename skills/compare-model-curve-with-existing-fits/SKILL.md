@@ -199,6 +199,27 @@ related_skills:
 9. **交付。** 产物目录里 `comparison.csv`（每行一条曲线：三列 χ²、CorMap、判据、判档）、`comparison.json`（含完整参数与复现命令）、`model-vs-fit.png`、`fits/`（拷贝过来的拟合文件）、`README.md`（分点总结 + 明细表 + 🟢🟡🔴 + 没做的）。
    完成标准：别人只看 `README.md` 就能复述结论、并知道每个数字的口径。
 
+## F — 故障与兜底（if-then 三段式）
+
+> 每条触发条件都在本机实跑里出现过；"一线修复"是这一次有效的动作，"仍失败兜底"是它不管用时的下一步。**不许静默跳过**：任一条触发后，结论里要写明走了哪一路。
+
+| 触发条件（怎么发现） | 一线修复 | 仍失败兜底 |
+|---|---|---|
+| crysol 报 `ATSAS resource files not found` | 显式给 `--atsas-dir /Applications/ATSAS-4.1.4-1/bin`，或 `export ATSAS=<安装根>`（脚本会按 bin 的父目录补 `$ATSAS`） | `crysol --version` 确认可执行；版本 < 4 就换安装（`datcmp` 是判决列，缺它等于本 skill 无法排序） |
+| crysol 报 `unable to determine number of hydrogens for …` | 先 `--explicit-hydrogens`（文件里已带 H 时） | 再 `--alternative-names`（老 PDB 命名）；仍失败用 `--implicit-hydrogen 0` |
+| crysol 报 `unable to determine element for …` | `--alternative-names` | `--sub-element C`（或该原子真实元素）覆盖 |
+| crysol 报 `No such model or chain in structure: X.cif`（实测：`4LI2-676_D.cif` 里只有 HOH） | 打开文件确认有没有原子（只有水/离子的链不算模型） | 换文件；或用 `--chain <ID>` 只取有原子的链；多链体系先拆链核对（拆链脚本在 `embed-a-model-in-bead-and-density-models`） |
+| `datcmp` 给 `χ²=0.000000, p=1.000000` | 你喂的是普通 `.dat`（它把自己跟自己比）→ 换成 `.fit`/`.fir`/`.out` | 手上只有 `.dat` 时，用本 skill 的同网格 χ² 列自算，并在报告里标「datcmp 不适用」 |
+| `datcmp` 给哨兵 `-1.000000` | 该文件不是可识别的拟合格式（BIFT `.ift`；DAMMIF 的 3 列 `.fit` 绘图文件） | 找同名 4 列 `.fir`（脚本已自动优先取它）；找不到就把该行标「不可判」、不参与排序 |
+| 同一条 IFT 拟合出现两个 χ²（GNOM `.out` 4.253 vs IFT 表里 0.4631） | 说明口径：`.out` 的拟合块覆盖全 q（含被裁掉的低 q 与 q=0），IFT 表里那个是 GNOM 自己拟合区间/误差模型下的值 | 该行标「口径不同、只作参考」，并从排序中排除 |
+| χ² 大到几十~几百，且残差图整体成片同号 | 先比 Rg：模型 vs Guinier/P(r)。差 30% 就别指望拟合（实测 `A5.pdb`：15.5 Å vs 样品 20.8 Å → χ²=155）→ 怀疑组装态（单体/二聚体） | 换组装态/换模型重跑；**不要**靠调 `--lm`/`--constant` 硬凑 |
+| χ² 大，且残差集中在低 q | 用 `datcrop --smin/--smax` 裁掉光束挡晕/聚集区再拟合 | 裁完仍差 → 回 `assess-saxs-raw-data-quality` / `assess-guinier-fit-quality`，而不是继续拟合（实测裁 q 只把 161.6 降到 155.0，主因不在 q 区间） |
+| red. χ² 在区间内但 CorMap 拒绝（p ≤ α） | 结论写成「量级合格、形状仍有系统偏差」，并在残差图上指出偏差所在的 q 段 | 偏差集中在高 q → 怀疑模型侧链/寡聚态；集中在低 q → 回数据 QC |
+| `scipy` 不可用（算不出 χ²_n 区间） | 脚本自动退化为「只报数、不下判」 | 换 `/Applications/BioXTASRAW/bin/python` 跑（含 numpy/scipy/matplotlib） |
+| 出图失败（缺字形 / 后端 / 负误差条） | 图内文字保持英文（脚本默认），报错只告警；数字与 README 已先落盘 | 用 `--no-plot` 先交付数字与 README，事后再单独补图 |
+| `--processed` 目录里出现你没写过的 `_prev_*` 或新布局 | 说明别的会话刚重排过该目录 → **停下问用户**，别写进别人的输出目录 | 一律用 `--out` 指到独立目录；报告里点名产物落点 |
+| 长跑中途被打断（回合插话会杀后台进程） | 重跑同一命令（同名产物覆盖，参数一致即幂等） | 按样品/模型拆 `--out` 分块跑，完成一块核对一块 |
+
 ## B — 边界 (Boundary)
 
 **不要用的场景**
