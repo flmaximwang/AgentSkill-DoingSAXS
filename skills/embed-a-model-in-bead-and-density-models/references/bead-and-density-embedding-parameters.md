@@ -224,7 +224,8 @@ env -u PYTHONPATH /Applications/PyMOL.app/Contents/bin/python3.10 render-embed-f
   - **平滑后必须重解 level**：同一个 level 0.02 在平滑图上包围体积会涨到 **279%**；正确口径是让包围体积
     回到 `denss.log` 的 `Final Support Volume`（本次 56392 Å³），实测 level 0.09539 → 56077 Å³ = **99.4%**。
   - 该体积由 `mrcmap.py` 直接从 `.mrc` 数格点算出（`volume_above`），不是估计值。
-- **框架**（`--zoom-buffer`，默认 8 Å）：珠球面板直接 `zoom(sample or beads)`；电子云面板不能用 `zoom()`
+- **框架**（`--zoom-buffer`，默认 8 Å；包围盒按**一个体素**外扩——等值面在体素之间插值，实测 18 个样品里有 1 个
+  （909-TC-APO，体素 11.6 Å、包络 1.49e5 Å³）把等值面顶到画面角上），余下同句：：珠球面板直接 `zoom(sample or beads)`；电子云面板不能用 `zoom()`
   （**surface 对象不是原子选择，PyMOL 会报 `Invalid selection name`**），改用「把包络包围盒做成 8 个临时 pseudoatom
   再 zoom」——包络体积的 voxel 下标 → XYZ 用 `cmd.get_extent(map)` 换算（实测该 extent 覆盖的是**体素中心**：32 体素 /
   217.7 Å 的盒子报 210.9 Å = 31 个间隔，所以映射是 `lo + idx/(N-1)*(hi-lo)`，不加半格）。

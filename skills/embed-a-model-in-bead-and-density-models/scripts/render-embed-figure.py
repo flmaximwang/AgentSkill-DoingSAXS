@@ -207,11 +207,15 @@ def main(argv=None):
         if ext.shape == (2, 3) and len(idx):
             frac = idx / (np.array(m["data"].shape)[None, :] - 1.0)
             xyz = ext[0] + frac * (ext[1] - ext[0])
-            for p in np.vstack([xyz.min(0), xyz.max(0),
-                                xyz[[xyz[:, 0].argmax(), xyz[:, 0].argmin()]],
-                                xyz[[xyz[:, 1].argmax(), xyz[:, 1].argmin()]],
-                                xyz[[xyz[:, 2].argmax(), xyz[:, 2].argmin()]]]):
-                cmd.pseudoatom("envelope_box", pos=[float(v) for v in p])
+            # the isosurface interpolates between voxels, so it can bulge up to one voxel beyond
+            # the box of above-level voxel *centres* (measured: 1 of 18 samples had the contour
+            # touching the frame corner) -> pad the box by one voxel on every side
+            pad = np.array(m["voxel"], dtype=float)
+            lo, hi = xyz.min(0) - pad, xyz.max(0) + pad
+            for cx in (lo[0], hi[0]):
+                for cy in (lo[1], hi[1]):
+                    for cz in (lo[2], hi[2]):
+                        cmd.pseudoatom("envelope_box", pos=[float(cx), float(cy), float(cz)])
             cmd.hide("everything", "envelope_box")
             cmd.zoom("envelope_box or sample", args.zoom_buffer)
             cmd.delete("envelope_box")
