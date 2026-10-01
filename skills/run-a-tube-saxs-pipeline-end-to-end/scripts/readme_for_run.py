@@ -88,81 +88,14 @@ def _fmt(x, unit="", nd=2):
         return str(x)
 
 
-def _one_liner(sm, present):
-    """一句话结论：先给"能不能用"，再说不能用的部分与原因。只依据 summary.json 判状态。"""
-    ift = sm.get("ift") or {}
-    sub = sm.get("subtraction") or {}
-    auto = sm.get("guinier_auto") or {}
-    rec = sm.get("guinier_recommended")
-    shape = sm.get("shape")
-    denss = shape.get("denss") if isinstance(shape, dict) else None
-    shape_msg = denss if isinstance(denss, str) else None        # 失败/跳过时这里是一句话
-    denss = denss if isinstance(denss, dict) else None
-    _dm = shape.get("dammif") if isinstance(shape, dict) else None
-    dammif_msg = _dm if isinstance(_dm, str) else None
-    dammif_ok = ([r for r in _dm if isinstance(r, dict) and "failed" not in r]
-                 if isinstance(_dm, list) else [])
-    _dv = shape.get("damaver") if isinstance(shape, dict) else None
-    damaver = _dv if isinstance(_dv, dict) else None
-    runs = ift.get("runs") or []
-    ran, trusted = bool(runs), bool(ift.get("trusted"))
-    crow = next((r for r in runs if r.get("tag") == ift.get("chosen") and "failed" not in r), None)
+COLOR = {"✅": "🟢", "⚠️": "🟡", "❌": "🔴"}
 
-    c = sub.get("contrast_lowq")
-    weak = c is not None and float(c) < 0.02
-    rg_auto = auto.get("rg")
-    rg_real = crow.get("rg_realspace") if crow else None
 
-    bits = []
-    # ① 先给"能不能用"——对比度太低时不能因为闸门过了就说可用
-    if weak:
-        bits.append("**这批数据基本不能用**：低 q 对比度只有 %s（信号埋在背景里），"
-                    "下面的 Rg/P(r) 都可能是在拟合背景" % _fmt_sub_contrast(c))
-    if rec and all(_gate(v) for v in (rec.get("gates") or {}).values()):
-        bits.append("低 q 与整体都可用")
-    elif auto:
-        bits.append("整体可用，但**低 q 不服从单一 Guinier 定律**（多分散或残留背景），"
-                    "报 Rg 必须带上 q 区间")
-    # ② 形状是不是像大颗粒（并指出与 P(r) 的矛盾）
-    if rg_auto and float(rg_auto) > 40:
-        extra = ""
-        if rg_real:
-            extra = ("；同一份数据的 P(r) 给 Rg(实空间) = %s Å，两者差得远 —— "
-                     "低 q 还有额外成分，别只报 auto-Guinier 那个数" % _fmt(rg_real, "", 1))
-        bits.append("auto-Guinier 的 Rg = %s Å 偏大（大颗粒/聚集或多分散的迹象）%s"
-                    % (_fmt(rg_auto, "", 0), extra))
-    # ③ P(r)
-    if not ran:
-        bits.append("本次运行**没有跑 IFT/P(r)**（`--steps` 里没包含）")
-    elif not trusted:
-        bits.append("**P(r) 不可信**（IFT 闸门没过）→ 不报 P(r)、不建 3D，只能用高 q 的形状信息")
-    else:
-        bits.append("P(r) 算出来了：Dmax = %s Å，Rg(实空间) = %s Å%s"
-                    % (_fmt(crow.get("dmax") if crow else None, "", 1), _fmt(rg_real, "", 1),
-                       "（但对比度太低，别当结论用）" if weak else ""))
-    # ④ 形状重建：电子云（DENSS）与珠模（DAMMIF/DAMAVER）
-    shapes = []
-    if denss:
-        shapes.append("电子云(DENSS)已出")
-    elif shape_msg:
-        shapes.append("电子云(DENSS)**失败**（%s）" % str(shape_msg)[:60])
-    if dammif_ok:
-        chis = min(float(r["chisq"]) for r in dammif_ok)
-        shapes.append("珠模 %d 个（最好 χ² = %s%s）"
-                      % (len(dammif_ok), _fmt(chis, "", 1),
-                         "，先修曲线" if chis > 5 else ""))
-    elif dammif_msg:
-        shapes.append("没出珠模（%s）" % str(dammif_msg)[:40])
-    if damaver:
-        shapes.append("平均 NSD %s%s"
-                      % (_fmt(damaver.get("mean_nsd"), "", 3),
-                         ("（%d 个 cluster）" % len(damaver.get("clusters") or [])
-                          if (damaver.get("clusters") or []) else "")))
-    if shapes:
-        bits.append("；".join(shapes))
-    elif ran and trusted:
-        bits.append("形状重建没跑（`--model-engine none`）")
-    return "；".join(bits) + "。"
+def _color(s):
+    """能不能用一律用**颜色圆点**：🟢 好的参数 / 🟡 需要警惕 / 🔴 坏的（不可用）。"""
+    for k, v in COLOR.items():
+        s = s.replace(k, v)
+    return s
 
 
 def _gate(v):
@@ -171,6 +104,68 @@ def _gate(v):
     if isinstance(v, str):
         return v.strip().lower() not in ("false", "0", "no", "none", "")
     return bool(v)
+
+
+def _summary_bullets(sm, present):
+    """结论速览：三颗点（结论先行，再给明细表）。
+
+    ① 数据可用性：**q 区间**哪一段能用、哪一段不能用（低 q 束挡光晕 / 高 q 噪声）；
+    ② 表现较好的参数 / ③ 表现较差的参数：直接取第 1 节那张判读表的结论，一句话一个。
+    """
+    sub = sm.get("subtraction") or {}
+    rec = sm.get("guinier_recommended") or {}
+    auto = sm.get("guinier_auto") or {}
+    ift = sm.get("ift") or {}
+    runs = ift.get("runs") or []
+    chosen = ift.get("chosen")
+    crow = next((r for r in runs if r.get("tag") == chosen and "failed" not in r), None)
+    wrow = next((r for r in runs if r.get("tag") == "window-start" and "failed" not in r), None)
+    trust = bool(ift.get("trusted"))
+
+    # ---------------------------------------------------------------- ① 数据可用性
+    parts = []
+    if wrow:
+        parts.append("分析窗 q %s–%s Å⁻¹" % (_fmt(wrow.get("qmin"), "", 4),
+                                              _fmt(wrow.get("qmax"), "", 4)))
+    else:
+        parts.append("分析窗上限 q %s Å⁻¹（SNR 判据定的）" % _fmt(auto.get("qmax"), "", 4))
+    if wrow and float(wrow.get("qmin") or 1) < 0.010:
+        parts.append("**q ≲ 0.010 落在束挡光晕上、不可用**（本机实测：r≤16 px 处只有 38% 的环"
+                     "未遮挡，低 q 上翘主要来自这里）")
+    if rec:
+        g = rec.get("gates") or {}
+        bad = [k for k, v in g.items() if not _gate(v)]
+        parts.append("**最干净的 Guinier 区 q %s–%s**（R² = %s%s）"
+                     % (_fmt(rec.get("qmin"), "", 4), _fmt(rec.get("qmax"), "", 4),
+                        _fmt(rec.get("r_sqr"), "", 4),
+                        "，qRg 上限 %s 略越过形状上界" % _fmt(rec.get("qrg_max"))
+                        if any("qrg" in b for b in bad) else ""))
+    else:
+        parts.append("**没有 q 区间能同时过四条 Guinier 闸门**")
+    c = sub.get("contrast_lowq")
+    if c is not None:
+        parts.append("低 q 对比度 %s" % _fmt_sub_contrast(c))
+    parts.append("分析窗上界 %s 以上的点已按 SNR≥2 剔除，不再参与拟合"
+                 % _fmt((wrow or {}).get("qmax") or auto.get("qmax"), "", 4))
+    a_ok = "；".join(parts) + "。"
+
+    # ------------------------------------------------- ②③ 好 / 差，取自同一张判读表
+    good, bad = [], []
+    for step, param, value, err, ok, how in _fit_param_table(sm)[0]:
+        label = "%s %s（%s）" % (param, value, step)
+        why = ok.split("｜", 1)[1] if "｜" in ok else ok
+        why = why.replace("🟢 ", "").replace("🟡 ", "").replace("🔴 ", "").strip()
+        if ok.startswith("🟢"):
+            good.append("🟢 %s —— %s" % (label, why))
+        elif ok.startswith("🟡"):
+            bad.append("🟡 %s —— %s" % (label, why))
+        elif ok.startswith("🔴"):
+            bad.append("🔴 %s —— %s" % (label, why))
+    if not good:
+        good.append("（本次没有环节处在可用档）")
+    if not bad:
+        bad.append("（本次所有环节都在可用档）")
+    return a_ok, good, bad
 
 
 def _fit_param_table(sm):
@@ -194,12 +189,37 @@ def _fit_param_table(sm):
             if isinstance(_dm, list) else [])
     dv = sh.get("damaver") if isinstance(sh, dict) else None
     dv = dv if isinstance(dv, dict) else None
-    weak = sub.get("contrast_lowq") is not None and float(sub.get("contrast_lowq") or 0) < 0.02
+    auto = sm.get("guinier_auto") or {}
+    cq = sub.get("contrast_lowq")
+    weak = cq is not None and float(cq) < 0.02
+    rg_any = rec.get("rg") or auto.get("rg") or (crow or {}).get("rg_realspace")
+    rg_big = rg_any is not None and float(rg_any) > 40
     trust = bool(ift.get("trusted"))
     rows = []
 
+    # 整体不合格的硬伤（任何一条成立，"🟢 自洽"都不能当结论）—— 逐行判档之外另给一句警告
+    flags = []
+    clusters_note = ""
+    if weak:
+        flags.append("低 q 对比度只有 %s（<2%%）" % _fmt_sub_contrast(cq))
+    if rg_big:
+        flags.append("Rg ≈ %s Å 像多聚/聚集" % _fmt(rg_any, "", 0))
+    if gnom and "suspicious" in str(gnom.get("quality") or "").lower():
+        flags.append("GNOM 判语 %s（TE %s / α %s）"
+                     % (gnom.get("quality"), _fmt(gnom.get("total_est"), "", 3),
+                        _fmt(gnom.get("alpha"), "", 0)))
+    if crow and crow.get("chisq") is not None and float(crow["chisq"]) > 10:
+        flags.append("IFT χ² = %s（≫1）" % _fmt(crow["chisq"], "", 1))
+    _best_chi = min([float(r["chisq"]) for r in dmok], default=None)
+    if _best_chi is not None and _best_chi > 20:
+        flags.append("珠模 χ² = %s（≫5）" % _fmt(_best_chi, "", 1))
+    if dv and len(dv.get("clusters") or []) > 1:
+        clusters_note = "DAMAVER 分成 %d 个 cluster（形状还没定）" % len(dv.get("clusters") or [])
+
     def emit(step, param, value, err, ok, how):
-        rows.append((step, param, value, err, ok, how))
+        # 逐参数判档，不做"一票否决"：硬伤只写在 README 顶部的提示里（flags），
+        # 否则一个 cluster 分裂会把整张表都盖成黄灯，反而看不出哪个参数真的能用
+        rows.append((step, param, value, err, _color(ok), how))
 
     # ------------------------------------------------------------ Guinier
     if rec:
@@ -224,6 +244,11 @@ def _fit_param_table(sm):
              "%s / %s" % (_fmt(rec.get("r_sqr"), "", 4), _fmt(rec.get("chi2_red"), "", 3)),
              "—", "✅ 区间形状自洽" if passg else "⚠️ 见上面的闸门",
              "R²>0.99 且 χ²_red≈1 才说明这段真的是 Guinier 区；χ²_red≫1 = 误差被低估或形状不对")
+    elif auto:
+        emit("Guinier 拟合", "Rg（auto，仅参考）",
+             "%s Å" % _fmt(auto.get("rg"), "", 2), "—", "❌ 没有区间通过闸门",
+             "auto 区间只是为了给 IFT 一个出发点；**本样品没有可引用的 Rg**。"
+             "见 `tables/guinier_multi_range.csv` 里每条闸门为什么没过")
     # ------------------------------------------------------------ IFT
     if crow:
         de = crow.get("dmax_err")
@@ -241,25 +266,32 @@ def _fit_param_table(sm):
              "%s Å" % _fmt(crow.get("rg_realspace"), "", 2),
              "± %s Å" % _fmt(crow.get("rg_err"), "", 3),
              "✅ 与 Guinier 对得上" if trust else "❌ 与 Guinier 对不上",
-             "和 Guinier 的 Rg 差 %s（<10%% 才算对得上）；差得多说明 q 窗口或 Dmax 不对，"
-             "而不是'更精确的 Rg'"
-             % (_fmt(abs(float(crow.get("rg_realspace")) - float(rec.get("rg", 0)))
-                     / float(rec.get("rg", 1)) * 100, "%", 0) if rec.get("rg") else "—"))
+             ("和 Guinier 的 Rg 差 %s（<10%% 才算对得上）；差得多说明 q 窗口或 Dmax 不对，"
+              "而不是'更精确的 Rg'"
+              % _fmt(abs(float(crow.get("rg_realspace")) - float(rec["rg"])) / float(rec["rg"]) * 100,
+                     "%", 0)) if rec.get("rg") else
+             "本样品**没有可引用的 Guinier Rg**（没有区间通过闸门），所以这条没法交叉验证 —— "
+             "IFT 的 Rg 只能靠 Rg < Dmax/2 之类的自洽性打量")
         emit("IFT / P(r)", "χ²（拟合优度）", _fmt(crow.get("chisq"), "", 3), "—",
              "✅ 合理" if 0.3 <= float(crow.get("chisq") or 0) <= 3 else "⚠️ 偏离 1 较远",
              "≈1 = 误差标定到位；≫1 → 误差被低估或形状不对；**<1 常见于误差被高估**，"
              "不代表拟合更好")
         if gnom:
+            q_str = str(gnom.get("quality") or "").lower()
+            q_ok = ("❌ **GNOM 判语：%s**" % gnom.get("quality")) if "suspicious" in q_str \
+                else (("✅ %s" % gnom.get("quality")) if "reasonable" in q_str
+                      else "⚠️ %s" % (gnom.get("quality") or "无判语"))
+            al = gnom.get("alpha")
             emit("GNOM", "Total estimate / α",
-                 "%s / %s" % (_fmt(gnom.get("total_est"), "", 3), _fmt(gnom.get("alpha"), "", 2)),
-                 "—", "✅ %s" % (gnom.get("quality") or "—"),
-                 "GNOM 自己的解质量指标（TE<1 一般算合理）+ 自动定的惩罚权重 α。"
-                 "它们只说明'这个解自洽'，**不证明解唯一**")
+                 "%s / %s" % (_fmt(gnom.get("total_est"), "", 3), _fmt(al, "", 2)),
+                 "—", q_ok,
+                 "GNOM 自己的解质量指标（TE<1 一般算合理）+ 自动定的惩罚权重 α"
+                 "（α 大到几百以上说明解被'拽'得很凶）。它们只说明'这个解自洽'，**不证明解唯一**")
     # ------------------------------------------------------------ MW
     vc = mw.get("Vc")
     if isinstance(vc, dict) and vc.get("mw") is not None:
         emit("分子量", "Vc（浓度无关）", "%s kDa" % _fmt(vc.get("mw"), "", 1), "± ~10%",
-             "⚠️ 偏大需查" if (weak or float(rec.get("rg") or 0) > 40) else "✅ 本次最可信的一条",
+             "⚠️ 偏大需查（像聚集/多聚）" if (rg_big or weak) else "✅ 本次最可信的一条",
              "程序不给误差，经验上 ±10%；**浓度无关**所以可直接用。与预期差 2× 以上多为聚集/"
              "多聚；本批最稀样品误差最大")
     vp = mw.get("Vp_porod")
@@ -271,8 +303,10 @@ def _fit_param_table(sm):
              "P/V 比值判断紧密程度" % _fmt(aux[0], "", 0) if aux else "**系统性高估 ~1.5×**是常态")
     db = mw.get("datmw_bayes")
     if isinstance(db, dict) and db.get("mw") is not None:
-        emit("分子量", "DATMW（贝叶斯）", "%s kDa" % _fmt(db.get("mw"), "", 1), "—",
-             "✅ 与 Vc 同量级才安心", "ATSAS 用 P(r) + Vc 做贝叶斯推断的 MW；与 Vc 差得多说明 P(r) "
+        _dfin = np.isfinite(float(db.get("mw")))
+        emit("分子量", "DATMW（贝叶斯）",
+             "%s kDa" % (("inf（发散）" if not _dfin else _fmt(db.get("mw"), "", 1))), "—",
+             "❌ 发散，这次没用" if not _dfin else "✅ 与 Vc 同量级才安心", "ATSAS 用 P(r) + Vc 做贝叶斯推断的 MW；与 Vc 差得多说明 P(r) "
  "不可信或体系不单一")
     # ------------------------------------------------------------ 珠模
     if dmok:
@@ -309,7 +343,7 @@ def _fit_param_table(sm):
              ("✅ 与 P(r) 一致" if (d2 is not None and d2 <= 10) else "⚠️ 与 P(r) 不一致"),
              "模型 Rg 应与 P(r) 的 Rg 差 <10%%（本次差 %s）；χ² 只在 IFT 可信时才有意义，"
              "密度图本身不做拟合误差" % (_fmt(d2, "%", 0) if d2 is not None else "—"))
-    return rows
+    return rows, flags
 
 
 def write_readme(out, extra_note=None):
@@ -349,24 +383,39 @@ def write_readme(out, extra_note=None):
     A("> 自动生成 %s ｜ 脚本 `run-raw-tube-pipeline.py` ｜ 原始帧 `%s` ｜ 配置 `%s`"
       % (time.strftime("%Y-%m-%d %H:%M"), sm.get("sample_dir", "?"), sm.get("cfg", "?")))
     A("")
-    A("## 0. 最终拟合参数（先看这张表）")
+    prot, _flags = _fit_param_table(sm)
+    a_ok, good, bad = _summary_bullets(sm, rel)
+    A("## 结论速览")
     A("")
-    A("> **怎么读**：先看「能不能用」这一列 —— 它综合了闸门（值本身自不自洽）、跨引擎/跨起跑点一致性、"
-      "以及与别的独立判据（稀释序列、MW）对不对得上。")
+    warns = list(_flags)
+    if len((((sm.get("shape") or {}) if isinstance(sm.get("shape"), dict) else {})
+            .get("damaver") or {}).get("clusters") or []) > 1:
+        warns.append("DAMAVER 分成多个 cluster（形状还没定）")
+    if warns:
+        A("> 🟡 **需要警惕**（不否定整份结果，但引用数字前先看这几条）："
+          + "；".join("**%s**" % f for f in warns) + "。")
+        A("")
+    A("- **数据可用性**：%s" % a_ok)
+    A("- **表现较好的参数**：")
+    for g in good:
+        A("  - %s" % g)
+    A("- **表现较差的参数**：")
+    for b in bad:
+        A("  - %s" % b)
+    A("")
+    A("## 1. 最终拟合参数（明细表）")
+    A("")
+    A("> **怎么读**：先看「能不能用」这一列（🟢 好 / 🟡 需要警惕 / 🔴 坏）—— 它综合了闸门（值本身自不自洽）、"
+      "跨引擎/跨起跑点一致性、以及与别的独立判据（稀释序列、MW）对不对得上。")
     A("> 「程序误差」一列只是**拟合随机误差**，它**永远不会**告诉你背景扣错了、低 q 被束挡污染了、"
       "或样品是多分散的 —— 那类**系统误差**写在最后一列。")
     A("")
     A("| 环节 | 参数 | 值 | 程序误差 | 能不能用 | 误差 / 不确定度怎么读 |")
     A("|---|---|---|---|---|---|")
-    prot = _fit_param_table(sm)
     for step, param, value, err, ok, how in prot:
         A("| %s | %s | %s | %s | %s | %s |" % (step, param, value, err, ok, how))
     A("")
-    A("## 一句话结论")
-    A("")
-    A(_one_liner(sm, rel))
-    A("")
-    A("## 1. 关键结果")
+    A("## 2. 关键结果")
     A("")
     A("| 项目 | 数值 | 怎么看 |")
     A("|---|---|---|")
@@ -402,7 +451,7 @@ def write_readme(out, extra_note=None):
           % ("Dmax = %s%s Å，Rg(实空间) = %s Å，chisq = %s（引擎/起跑点：%s）"
              % (_fmt(crow.get("dmax"), "", 1), de_s,
                 _fmt(crow.get("rg_realspace"), "", 1), _fmt(crow.get("chisq"), "", 2), chosen),
-             "" if ok else " ——**不可信，不要引用**（闸门没过，见第 4 节）",
+             "" if ok else " ——**不可信，不要引用**（闸门没过，见第 5 节）",
              "三闸门（Rg 对得上 / Dmax ≤ 4.5·Rg / Dmax 未越出搜索网格）**全过才算结果**"))
     elif ift.get("runs"):
         A("| P(r) / IFT | **没解出来**（BIFT 两次起跑都失败） | 见 `tables/ift_summary.csv` |")
@@ -424,7 +473,7 @@ def write_readme(out, extra_note=None):
           % (_fmt(denss.get("chi2"), "", 2), _fmt(denss.get("rg_model"), "", 1),
              _fmt(denss.get("support_volume"), "", 0)))
     elif shape_msg:
-        A("| 电子云（DENSS） | **没出**：%s | 见第 4 节 |" % str(shape_msg)[:120])
+        A("| 电子云（DENSS） | **没出**：%s | 见第 5 节 |" % str(shape_msg)[:120])
     else:
         A("| 电子云（DENSS） | **本次没跑** | 想出就重跑时去掉 `--model-engine none` |")
     if dammif_ok:
@@ -441,7 +490,7 @@ def write_readme(out, extra_note=None):
             A("| 珠模失败次数 | %d 次（%s） | 见 `tables/shape_results.json` 与日志 |"
               % (len(bad), str(bad[0].get("failed"))[:80]))
     elif dammif_msg:
-        A("| 珠模（DAMMIF） | **没出**：%s | 装了 ATSAS 就能出；见第 4 节 |" % str(dammif_msg)[:120])
+        A("| 珠模（DAMMIF） | **没出**：%s | 装了 ATSAS 就能出；见第 5 节 |" % str(dammif_msg)[:120])
     if damaver:
         cl = damaver.get("clusters") or []
         A("| 珠模一致性（DAMAVER，%s 个模型） | 平均 NSD = %s ± %s；%d 个 cluster%s | "
@@ -452,7 +501,7 @@ def write_readme(out, extra_note=None):
     elif damaver_msg:
         A("| 珠模一致性（DAMAVER） | %s | — |" % str(damaver_msg)[:120])
     A("")
-    A("## 2. 这个文件夹里有什么（按建议阅读顺序）")
+    A("## 3. 这个文件夹里有什么（按建议阅读顺序）")
     A("")
     for pat, desc, when in FILE_DOC:
         if pat.startswith("<"):
@@ -500,10 +549,10 @@ def write_readme(out, extra_note=None):
                        "想建模型就重跑时去掉这个参数（DENSS 几分钟，DAMMIF 需要 ATSAS）")
     if not [p for p in rel if p.startswith("frames/")]:
         missing.append("- 没有 `frames/`：没加 `--save-frames`（逐帧曲线默认不落盘）")
-    A("## 3. 每个数字的判据")
+    A("## 4. 每个数字的判据")
     A("")
     A(RULES_TEXT)
-    A("## 4. 这次没做的 / 不能信的")
+    A("## 5. 这次没做的 / 不能信的")
     A("")
     if missing:
         L.extend(missing)
@@ -534,7 +583,7 @@ def write_readme(out, extra_note=None):
         A("")
         A(extra_note)
     A("")
-    A("## 5. 想自己复核")
+    A("## 6. 想自己复核")
     A("")
     A("- **在 RAW 里交互式看**：`File → Open Workspace` 打开 `%s_workspace.hdf5`，曲线、Guinier、IFT 都在里面。"
       % sample)
