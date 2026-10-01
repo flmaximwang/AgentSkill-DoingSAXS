@@ -20,7 +20,7 @@
 它**不做任何拟合**：拟合归 `AgentSkill-UsingBioXTASRAW` 的 15 个 skill，这里只判"那些拟合肥不肥"。
 
 > **状态**：已 push 到 <https://github.com/flmaximwang/AgentSkill-DoingSAXS>（**public**，远程用 SSH，default=main）；
-> 5 个 skill 均已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，pin 见下方表格）。
+> 6 个 skill 均已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，pin 见下方表格）。
 > `compare-model-curve-with-existing-fits`（2026-10-02）的 scan verdict 也是 **CAUTION**：`scripts/model-vs-fit.py` 命中
 > skills-guard 的 `python_os_environ`（读 `$ATSAS` 定位 ATSAS，2×HIGH）与 `python_subprocess`（调本机 crysol/datcmp/datcrop，1×MEDIUM），
 > 无网络、无外发，按先例用 `--force` 安装。
@@ -36,7 +36,7 @@
 | `assess-saxs-raw-data-quality` | `eff1219` | safe | `sha256:a9d3d37700dc7b9f` |
 | `run-a-sec-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:ba05a23c0de5b5ee` |
 | `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
-| `write-saxs-results-readme` | `4fd536d` | safe | `sha256:ab75c5c7bb9c186c` |
+| `write-saxs-results-readme` | `bab2923` | safe | —（本轮把 `test-results.md` 加进技能目录，哈希口径见 `hermes skills check`） |
 | `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
 | `compare-model-curve-with-existing-fits` | `17feeba` | caution | `sha256:fef50a862f8dfd97` |
 
@@ -72,6 +72,7 @@ python <write-saxs-results-readme>/scripts/verify-results-folder.py <结果目�
 |---|---|---|---|---|
 | 1（首轮） | `embed-a-model-in-bead-and-density-models`，17 个候选，10 条 | **9/10**（正面 5/6 · 诱饵 **4/4**） | **9/10**（正面 5/6 · 诱饵 **4/4**） | 两评测者 10 题**逐题完全一致**；唯一错误 #6（ChimeraX `--nogui` 存图报 OpenGL）两票都判 *none*——归因为**可见窗口放不下**（57 字符已给主触发词），按既有口径记代价、不雕题面 |
 | 1 | `compare-model-curve-with-existing-fits`，21 个候选，10 条 | **9/10**（正面 5/6 · 诱饵 **4/4**） | **9/10**（正面 **6/6** · 诱饵 **4/4**） | 两条错误都落在与 `fit-a-high-resolution-model-to-data` 的边界上（诱饵 #7「RAW 界面的 pdb 没有 Chi² / 要不要加 harmonics」被抢走；A 另把正面 #2 判给对方）。**试改一版头部（把「理论曲线」换成「命令行」）后诱饵 #7 被抢回、正面却掉 3–4 条（6/10、7/10）→ 回退用首轮头部**；取舍与代价见该 skill 的 `test-results.md` |
+| 1（首轮） | `write-saxs-results-readme`，13 个候选，9 条 | **9/9**（正面 **5/5** · 诱饵 **4/4**） | **9/9**（正面 **5/5** · 诱饵 **4/4**） | 两评测者**逐题完全一致、零错误**：两条最像的诱饵（#9 也是「写 README」但属批处理根目录 → `result-folder-readme`；#8 README 里也写 NSD 但判据归 `evaluate-a-shape-reconstruction`）都没被误收；无事可调，按既有口径记录即止 |
 | 2 | 同上，改了头部重测 | 6/10（正面 2/6 · 诱饵 4/4） | 7/10（正面 3/6 · 诱饵 4/4） | 已回退（见上一行处置） |
 | 1（首轮） | `assess-saxs-raw-data-quality`，17 个候选，10 条 | **7/10**（正面 4/6 · 诱饵 **4/4**） | **7/10**（正面 4/6 · 诱饵 **4/4**） | 4 条诱饵 100% 未误收（流水线/Guinier 判据/P(r)/MW 各归各位）；三条一致错误里 #10 认定为**金标偏严**（修订后 8/10 · 8/10），#5（砍 q_min 砍到哪）与 #9（上机前排 control）属**可见窗口放不下** → 按既有口径记代价、不再调参 |
 
@@ -79,6 +80,7 @@ darwin 优化：`compare-model-curve-with-existing-fits` 2026-10-02 走完 9 维
 
 细节（含每条错误归因与金标修订理由）见 [`test-results.md`](test-results.md)；
 `embed-a-model-in-bead-and-density-models` 的首轮盲测见 [`skills/embed-a-model-in-bead-and-density-models/test-results.md`](skills/embed-a-model-in-bead-and-density-models/test-results.md)。
+`write-saxs-results-readme` 的首轮盲测（含 13 个候选的截断文本与逐题判定）见 [`skills/write-saxs-results-readme/test-results.md`](skills/write-saxs-results-readme/test-results.md)。
 
 ## 安装（三段式标识符，按仓库内路径，不需要 tap；`--category` 只决定落点）
 
