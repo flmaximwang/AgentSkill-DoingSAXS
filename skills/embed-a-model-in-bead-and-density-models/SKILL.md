@@ -121,7 +121,8 @@ related_skills:
 | 对象 | 画法 |
 |---|---|
 | 高分辨模型 | **黄色 cartoon**（对象名 `sample`） |
-| 珠模型 / 电子云包络 | **半透明白色**（对象名 `beads` / `density`；珠球 `sphere_transparency`，等值面 `transparency`） |
+| 珠模型 / 电子云包络 | **半透明白色**（对象名 `beads` / `density`；珠球 `sphere_transparency 0.85`，等值面 `transparency 0.7`） |
+| 背景 | **黑色**（`--bg black`）：白包络在**白底上根本看不清**（白对白），黑底才看得出包络；珠模型与电子云两个面板同一口径 |
 
 **为什么在样品目录之外**：上游流水线（`run-a-tube-…` / `run-a-sec-…`）**重跑时会重建整个样品目录**，
 放进 `<样品>/embed/` 的产物会被下一次重跑删掉（2026-10-01 实测：一批已在 `<样品>/embed/` 跑好的结果
@@ -250,7 +251,7 @@ related_skills:
    输出："最大散布 X Å + 对应的 R + 与最高分的分数差"。
    判停点：散布 > 5 Å 且分数接近（实测 28.9 Å / 差 0.004）→ 结论必须写成"至少两个分数相当的不同摆法"，并说明 SAXS 包络本身不唯一。
 8. **出图（两张）+ 两张图各自的 `.pse`。**
-   输入：第 4/6 步叠好的模型 + 珠模型文件/`.mrc`；珠模型坐标系一张（模型 + 白色半透明珠球）、电子云坐标系一张（模型 + 白色半透明 isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。样式固定：`sample` 黄色 cartoon、`beads`/`density` 半透明白色；**两张图各自独立渲染**（一条分支没有包络不该让另一条也丢掉图和会话）。
+   输入：第 4/6 步叠好的模型 + 珠模型文件/`.mrc`；珠模型坐标系一张（模型 + 白色半透明珠球）、电子云坐标系一张（模型 + 白色半透明 isosurface），用 PyMOL 渲（ChimeraX `--nogui` 存不了图）。样式固定：**黑底**、`sample` 黄色 cartoon、`beads`/`density` 半透明白色（白底会让包络与珠模型都看不清）；**两张图各自独立渲染**（一条分支没有包络不该让另一条也丢掉图和会话）。
    输出：每个存在的分支一份 `*_in_beads.png` + `*_in_beads.pse` / `*_in_density.png` + `*_in_density.pse`；缺哪个面板，`embed_results.json` 的 `figures.<面板>.status` 里写明原因。
    验收：**回读 `.pse` 能看到逐对象设置**（`beads: sphere_transparency 0.9`、`density: transparency 0.7`、对象颜色 white/yellow）。
    补图用 `--figures-only`（读现成 `embed_results.json`，不重跑 CIFSUP/fitmap），几秒一个。

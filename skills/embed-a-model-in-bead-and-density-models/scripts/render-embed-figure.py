@@ -25,7 +25,7 @@ import mrcmap  # noqa: E402  (ships next to this script)
 # --overlay-transparency default depends on the representation: overlapping spheres pile up
 # (every layer multiplies the transmitted light), so the bead envelope needs a much larger
 # value than a single isosurface shell before the sample stays visible through it.
-DEFAULT_TRANSPARENCY = {"beads": 0.9, "density": 0.7}
+DEFAULT_TRANSPARENCY = {"beads": 0.85, "density": 0.7}
 
 
 def bead_radius_from_cif(path):
@@ -73,6 +73,9 @@ def parse_args(argv=None):
                          "(the level is re-derived from the smoothed map)")
     ap.add_argument("--sample-color", default="yellow", help="colour of the atomic model")
     ap.add_argument("--overlay-color", default="white", help="colour of the envelope")
+    ap.add_argument("--bg", default="black",
+                    help="background colour; black, because a translucent white envelope on a "
+                         "white background is nearly invisible")
     ap.add_argument("--size", type=int, default=1200, help="ray-traced image size (px)")
     ap.add_argument("--zoom-buffer", type=float, default=5.0,
                     help="margin (A) left around the drawn objects when framing the shot")
@@ -184,8 +187,9 @@ def main(argv=None):
     cmd.show("cartoon", "sample")
     cmd.color(args.sample_color, "sample")
     cmd.set("cartoon_transparency", 0.0, "sample")
-    cmd.bg_color("white")
+    cmd.bg_color(args.bg)
     cmd.set("ray_shadows", 0)
+    cmd.set("ray_opaque_background", 1)
     cmd.set("ray_trace_mode", args.ray_trace_mode)
     cmd.set("antialias", 2)
     cmd.set("cartoon_side_chain_helper", 1)

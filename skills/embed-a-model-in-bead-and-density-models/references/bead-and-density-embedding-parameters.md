@@ -189,8 +189,12 @@ env -u PYTHONPATH /Applications/PyMOL.app/Contents/bin/python3.10 render-embed-f
 #   --overlay-color white  --frame-margin 1.1  --size 1200  --pse <路径> | --no-pse
 ```
 
-**样式是交付口径，不是审美偏好**：`sample` 黄色 cartoon、`beads`/`density` 半透明**白色**；
+**样式是交付口径，不是审美偏好**：**黑底**（`--bg black`）+ `sample` 黄色 cartoon + `beads`/`density` 半透明**白色**；
 每张 png 旁边必须有一个同名 `.pse`（`cmd.save()`），打开就是同一张图。
+
+- **背景必须黑**：白底上白色半透明包络「白对白」，珠模型与电子云都看不清（本机实测：白底渲出来的珠球几乎与背景同色）。
+  改黑底后同一组参数立刻可读；两个面板同一口径，`.pse` 里存的是 `bg_color black`。
+- 黑底下的透明度：珠子 **0.85**（0.92 时包络发灰发暗）、等值面 **0.7**（0.5 时包络在画面里糊成一大片灰）。
 
 - 必须 `pymol.finish_launching(['pymol','-cq'])`（本机 CLI 二进制被 `biorazer_pymol` 挡着；会打印一条
   `ModuleNotFoundError: No module named 'biorazer_pymol'`，无害）。

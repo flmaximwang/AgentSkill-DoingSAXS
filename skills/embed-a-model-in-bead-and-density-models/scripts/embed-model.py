@@ -599,6 +599,7 @@ def make_figures(results, meta, model, stem, out, args):
             results["beads_fit"]["aligned_model"], results["bead_model"]["bead_model"],
             os.path.join(out, "%s_in_beads.png" % stem), "beads",
             "--overlay-transparency", str(args.bead_transparency),
+            "--bg", str(args.figure_bg),
             "--ss-ref", model, "--size", str(args.figure_size)]
     if results.get("density_fit", {}).get("best_aligned_model") and meta.get("density_map"):
         panels["density"] = [
@@ -606,6 +607,7 @@ def make_figures(results, meta, model, stem, out, args):
             os.path.join(out, "%s_in_density.png" % stem), "density",
             "--overlay-transparency", str(args.density_transparency),
             "--level", str(args.density_level), "--smooth", str(args.density_smooth),
+            "--bg", str(args.figure_bg),
             "--ss-ref", model, "--size", str(args.figure_size)]
     figs = {}
     for kind, argv in panels.items():
@@ -715,7 +717,10 @@ def main():
                          "embed_results.json without rerunning CIFSUP/fitmap")
     ap.add_argument("--figure-size", type=int, default=1200,
                     help="ray-traced figure size (px); a .pse is written next to every panel")
-    ap.add_argument("--bead-transparency", type=float, default=0.9,
+    ap.add_argument("--figure-bg", default="black",
+                    help="figure/session background colour; black, because a translucent white "
+                         "envelope is unreadable on a white background")
+    ap.add_argument("--bead-transparency", type=float, default=0.85,
                     help="transparency of the white bead spheres (0=opaque, 1=invisible); beads "
                          "need a large value because overlapping spheres multiply")
     ap.add_argument("--density-transparency", type=float, default=0.7,
