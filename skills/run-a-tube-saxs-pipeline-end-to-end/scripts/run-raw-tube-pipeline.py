@@ -273,10 +273,15 @@ def node_guinier(ctx, sub, qmax_idx, r_gate_qrg, min_pts=10, chi2_max=3.0,
                              i0=float(i0v), i0_err=float(i0_e), qrg_min=float(qrg_min),
                              qrg_max=float(qrg_max), r_sqr=float(r2), chi2_red=chi2r,
                              curvature=curv, rg_split_rel=float(rg_split),
-                             gates=dict(n_pts=i1 - i0 + 1 >= min_pts,
-                                        qrg=(qrg_max <= r_gate_qrg),
-                                        chi2=(np.isfinite(chi2r) and chi2r <= chi2_max),
-                                        stable=(np.isfinite(rg_split) and rg_split <= 0.05))))
+                             # bool() 是必须的：这些比较里混着 numpy 标量，jdump 用
+                             # default=str 会把 np.False_ 写成字符串 "False"，
+                             # 而 "False" 在 Python 里是**真**值 -> 下游 all(gates.values())
+                             # 会把没过闸门的区间读成"全过"
+                             gates=dict(n_pts=bool(i1 - i0 + 1 >= min_pts),
+                                        qrg=bool(qrg_max <= r_gate_qrg),
+                                        chi2=bool(np.isfinite(chi2r) and chi2r <= chi2_max),
+                                        stable=bool(np.isfinite(rg_split)
+                                                    and rg_split <= 0.05))))
 
     ok_rows = [r for r in rows if "failed" not in r]
     good = [r for r in ok_rows if all(r["gates"].values())]
@@ -555,7 +560,9 @@ def node_mw(ctx, sub, vp_mw=None):
         for name, fn in (("datmw_bayes", raw.mw_bayes), ("datclass", raw.mw_datclass)):
             try:
                 v = fn(sub, atsas_dir=ctx.atsas_dir)
-                mw[name] = dict(mw=float(v[0]), aux=[float(x) for x in v[1:]])
+                # datclass 的第 2 个返回值是字符串（'compact'/'extended'…），不能 float()
+                mw[name] = dict(mw=float(v[0]),
+                                aux=[x if isinstance(x, str) else float(x) for x in v[1:]])
             except Exception as e:
                 mw[name] = dict(failed=str(e))
     else:

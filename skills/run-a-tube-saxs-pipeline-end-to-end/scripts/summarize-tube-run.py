@@ -8,6 +8,15 @@ and writes one row per sample with the numbers a human judges the run by.
 """
 import argparse, csv, glob, json, os, time
 
+
+def _gate(v):
+    """summary.json 里的布尔可能被 default=str 写成 "False"/"True"（numpy 标量的历史遗留）；
+    字符串 "False" 在 Python 里是真值，必须显式当假读。"""
+    if isinstance(v, str):
+        return v.strip().lower() not in ("false", "0", "no", "none", "")
+    return bool(v)
+
+
 ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 ap.add_argument("root", help="directory holding one sub-directory per sample run")
 ap.add_argument("--out", default=None)
@@ -49,7 +58,7 @@ for d in sorted(glob.glob(os.path.join(root, "*"))):
             r["rec_Rg"] = round(rec["rg"], 2)
             r["rec_qmin"], r["rec_qmax"] = round(rec["qmin"], 5), round(rec["qmax"], 5)
             r["rec_chi2red"] = round(rec["chi2_red"], 2)
-            r["rec_passes"] = int(all(rec["gates"].values()))
+            r["rec_passes"] = int(all(_gate(v) for v in rec["gates"].values()))
         rr = [x["rg"] for x in g["ranges"] if "failed" not in x]
         if rr:
             r["range_Rg_spread"] = "%.1f-%.1f" % (min(rr), max(rr))

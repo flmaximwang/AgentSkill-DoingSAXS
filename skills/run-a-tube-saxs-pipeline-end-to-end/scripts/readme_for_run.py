@@ -118,7 +118,7 @@ def _one_liner(sm, present):
     if weak:
         bits.append("**这批数据基本不能用**：低 q 对比度只有 %s（信号埋在背景里），"
                     "下面的 Rg/P(r) 都可能是在拟合背景" % _fmt_sub_contrast(c))
-    elif rec and all((rec.get("gates") or {}).values()):
+    if rec and all(_gate(v) for v in (rec.get("gates") or {}).values()):
         bits.append("低 q 与整体都可用")
     elif auto:
         bits.append("整体可用，但**低 q 不服从单一 Guinier 定律**（多分散或残留背景），"
@@ -165,6 +165,153 @@ def _one_liner(sm, present):
     return "；".join(bits) + "。"
 
 
+def _gate(v):
+    """summary.json 里的布尔可能被 default=str 写成 "False"/"True"（numpy 标量的历史遗留）。
+    字符串 "False" 在 Python 里是**真**值 —— 不显式归一化就会把"没过闸门"读成"全过"。"""
+    if isinstance(v, str):
+        return v.strip().lower() not in ("false", "0", "no", "none", "")
+    return bool(v)
+
+
+def _fit_param_table(sm):
+    """第 0 节的表：最终拟合参数 + 程序报告的误差 + 这个参数能不能用 + 误差该怎么读。
+
+    立场：程序给的误差只是**拟合随机误差**；"能不能用"由闸门、一致性、独立判据决定。
+    """
+    sub = sm.get("subtraction") or {}
+    rec = sm.get("guinier_recommended") or {}
+    ift = sm.get("ift") or {}
+    runs = ift.get("runs") or []
+    chosen = ift.get("chosen")
+    crow = next((r for r in runs if r.get("tag") == chosen and "failed" not in r), None)
+    gnom = ift.get("gnom") if isinstance(ift.get("gnom"), dict) else None
+    mw = sm.get("mw") or {}
+    sh = sm.get("shape")
+    denss = sh.get("denss") if isinstance(sh, dict) else None
+    denss = denss if isinstance(denss, dict) else None
+    _dm = sh.get("dammif") if isinstance(sh, dict) else None
+    dmok = ([r for r in _dm if isinstance(r, dict) and "failed" not in r]
+            if isinstance(_dm, list) else [])
+    dv = sh.get("damaver") if isinstance(sh, dict) else None
+    dv = dv if isinstance(dv, dict) else None
+    weak = sub.get("contrast_lowq") is not None and float(sub.get("contrast_lowq") or 0) < 0.02
+    trust = bool(ift.get("trusted"))
+    rows = []
+
+    def emit(step, param, value, err, ok, how):
+        rows.append((step, param, value, err, ok, how))
+
+    # ------------------------------------------------------------ Guinier
+    if rec:
+        gates = rec.get("gates") or {}
+        bad = [k for k, v in gates.items() if not _gate(v)]
+        passg = not bad
+        okg = "✅ 可用（四条闸门全过）" if passg else "⚠️ 有条件：未过 %s" % ",".join(bad)
+        split = rec.get("rg_split_rel")
+        emit("Guinier 拟合", "Rg",
+             "%s Å" % _fmt(rec.get("rg"), "", 2), "± %s Å" % _fmt(rec.get("rg_err"), "", 3),
+             okg,
+             "程序误差是**拟合随机误差**，通常比真不确定度小得多；真不确定度看**区间间漂移**"
+             "（左右半段相对差 %s）和 R²。报 Rg 必须一起写 q 区间 %s–%s Å⁻¹（qRg ≤ %s）"
+             % (_fmt(split, "%", 1) if split is not None else "—", _fmt(rec.get("qmin"), "", 4),
+                _fmt(rec.get("qmax"), "", 4), _fmt(rec.get("qrg_max"))))
+        emit("Guinier 拟合", "I(0)",
+             _fmt(rec.get("i0"), "", 1), "± %s" % _fmt(rec.get("i0_err"), "", 2),
+             "⚠️ 只作相对量" if weak else "✅ 可用于序列内比较",
+             "统计误差同上；**系统校验**看稀释序列：I(0) 应随浓度成比例，并与 Vc-MW 自洽。"
+             "浓度未知时它没有绝对意义")
+        emit("Guinier 拟合", "R² / χ²_red",
+             "%s / %s" % (_fmt(rec.get("r_sqr"), "", 4), _fmt(rec.get("chi2_red"), "", 3)),
+             "—", "✅ 区间形状自洽" if passg else "⚠️ 见上面的闸门",
+             "R²>0.99 且 χ²_red≈1 才说明这段真的是 Guinier 区；χ²_red≫1 = 误差被低估或形状不对")
+    # ------------------------------------------------------------ IFT
+    if crow:
+        de = crow.get("dmax_err")
+        de_s = ("± %s Å" % _fmt(de, "", 1)) if (de is not None and np.isfinite(float(de))) \
+            else "程序不给"
+        ds = [r["dmax"] for r in runs if "failed" not in r and r.get("dmax")]
+        emit("IFT / P(r)", "Dmax",
+             "%s Å（引擎 %s）" % (_fmt(crow.get("dmax"), "", 1), crow.get("engine", "BIFT")),
+             de_s, "✅ 可信（三闸门全过）" if trust else "❌ 不可信（闸门没过）",
+             "**真不确定度 = 换起算 q / Dmax 网格后它怎么变**：本次 %d 个引擎/起跑点给出 %s Å"
+             "（差这么多说明 Dmax 主要是被低 q 决定的，不是数据本身）。程序误差（只有 BIFT 给）"
+             "只反映单次拟合内部一致性"
+             % (len(ds), "–".join([_fmt(min(ds), "", 1), _fmt(max(ds), "", 1)]) if ds else "—"))
+        emit("IFT / P(r)", "Rg（实空间）",
+             "%s Å" % _fmt(crow.get("rg_realspace"), "", 2),
+             "± %s Å" % _fmt(crow.get("rg_err"), "", 3),
+             "✅ 与 Guinier 对得上" if trust else "❌ 与 Guinier 对不上",
+             "和 Guinier 的 Rg 差 %s（<10%% 才算对得上）；差得多说明 q 窗口或 Dmax 不对，"
+             "而不是'更精确的 Rg'"
+             % (_fmt(abs(float(crow.get("rg_realspace")) - float(rec.get("rg", 0)))
+                     / float(rec.get("rg", 1)) * 100, "%", 0) if rec.get("rg") else "—"))
+        emit("IFT / P(r)", "χ²（拟合优度）", _fmt(crow.get("chisq"), "", 3), "—",
+             "✅ 合理" if 0.3 <= float(crow.get("chisq") or 0) <= 3 else "⚠️ 偏离 1 较远",
+             "≈1 = 误差标定到位；≫1 → 误差被低估或形状不对；**<1 常见于误差被高估**，"
+             "不代表拟合更好")
+        if gnom:
+            emit("GNOM", "Total estimate / α",
+                 "%s / %s" % (_fmt(gnom.get("total_est"), "", 3), _fmt(gnom.get("alpha"), "", 2)),
+                 "—", "✅ %s" % (gnom.get("quality") or "—"),
+                 "GNOM 自己的解质量指标（TE<1 一般算合理）+ 自动定的惩罚权重 α。"
+                 "它们只说明'这个解自洽'，**不证明解唯一**")
+    # ------------------------------------------------------------ MW
+    vc = mw.get("Vc")
+    if isinstance(vc, dict) and vc.get("mw") is not None:
+        emit("分子量", "Vc（浓度无关）", "%s kDa" % _fmt(vc.get("mw"), "", 1), "± ~10%",
+             "⚠️ 偏大需查" if (weak or float(rec.get("rg") or 0) > 40) else "✅ 本次最可信的一条",
+             "程序不给误差，经验上 ±10%；**浓度无关**所以可直接用。与预期差 2× 以上多为聚集/"
+             "多聚；本批最稀样品误差最大")
+    vp = mw.get("Vp_porod")
+    if isinstance(vp, dict) and vp.get("mw") is not None:
+        aux = vp.get("aux") or []
+        emit("分子量", "Vp（Porod 体积）", "%s kDa" % _fmt(vp.get("mw"), "", 1),
+             "—", "⚠️ 只作数量级",
+             "**系统性高估 ~1.5×**是常态（已知偏差，不是误差）；Porod 体积 %s Å³ 可用来算 "
+             "P/V 比值判断紧密程度" % _fmt(aux[0], "", 0) if aux else "**系统性高估 ~1.5×**是常态")
+    db = mw.get("datmw_bayes")
+    if isinstance(db, dict) and db.get("mw") is not None:
+        emit("分子量", "DATMW（贝叶斯）", "%s kDa" % _fmt(db.get("mw"), "", 1), "—",
+             "✅ 与 Vc 同量级才安心", "ATSAS 用 P(r) + Vc 做贝叶斯推断的 MW；与 Vc 差得多说明 P(r) "
+ "不可信或体系不单一")
+    # ------------------------------------------------------------ 珠模
+    if dmok:
+        bd = min(dmok, key=lambda r: r["chisq"])
+        ch = float(bd["chisq"])
+        emit("珠模 DAMMIF（%d 个）" % len(dmok), "χ²", _fmt(ch, "", 2), "—",
+             "✅ 拟合好" if ch <= 5 else "⚠️ 偏大 → 数据问题",
+             "1–3 才算拟合好；>5 先修曲线（低 q 污染/背景残留），**不是 DAMMIF 参数问题**")
+        rgp = crow.get("rg_realspace") if crow else None
+        drift = (abs(float(bd["rg"]) - float(rgp)) / float(rgp) * 100) if rgp else None
+        emit("珠模 DAMMIF", "Rg / Dmax / MW",
+             "%s / %s Å / %s kDa" % (_fmt(bd["rg"], "", 1), _fmt(bd["dmax"], "", 1),
+                                     _fmt(bd["mw"], "", 0)),
+             "—（系综内看 SD）",
+             "✅ 与 P(r) 一致" if (drift is not None and drift <= 10) else "⚠️ 与 P(r) 不一致",
+             "模型 Rg 应与 P(r) 的 Rg 接近（本次差 %s）；Dmax 一般比 P(r) 的略大（珠子外壳）"
+             % (_fmt(drift, "%", 0) if drift is not None else "—"))
+    if dv:
+        nsd, sd = dv.get("mean_nsd"), dv.get("stdev_nsd")
+        ncl = len(dv.get("clusters") or [])
+        emit("珠模一致性 DAMAVER", "平均 NSD",
+             _fmt(nsd, "", 3), "± %s" % _fmt(sd, "", 3),
+             "✅ 同一类形状" if (nsd is not None and float(nsd) <= 2 and ncl <= 1)
+             else "⚠️ 形状还没定",
+             "≲2 = 这些模型是同一类形状；**分成多个 cluster = 形状未定**（本次 %d 个），"
+             "加 `--n-models` 再多跑几个；SD 大说明模型间不稳定" % ncl)
+    if denss:
+        rgp = crow.get("rg_realspace") if crow else None
+        d2 = (abs(float(denss.get("rg_model")) - float(rgp)) / float(rgp) * 100) if rgp else None
+        emit("电子云 DENSS", "χ² / 模型 Rg",
+             "%s / %s Å" % (_fmt(denss.get("chi2"), "", 2), _fmt(denss.get("rg_model"), "", 1)),
+             "—",
+             "❌ 无意义（IFT 不可信）" if not trust else
+             ("✅ 与 P(r) 一致" if (d2 is not None and d2 <= 10) else "⚠️ 与 P(r) 不一致"),
+             "模型 Rg 应与 P(r) 的 Rg 差 <10%%（本次差 %s）；χ² 只在 IFT 可信时才有意义，"
+             "密度图本身不做拟合误差" % (_fmt(d2, "%", 0) if d2 is not None else "—"))
+    return rows
+
+
 def write_readme(out, extra_note=None):
     out = os.path.abspath(os.path.expanduser(out))
     sj = os.path.join(out, "summary.json")
@@ -202,6 +349,19 @@ def write_readme(out, extra_note=None):
     A("> 自动生成 %s ｜ 脚本 `run-raw-tube-pipeline.py` ｜ 原始帧 `%s` ｜ 配置 `%s`"
       % (time.strftime("%Y-%m-%d %H:%M"), sm.get("sample_dir", "?"), sm.get("cfg", "?")))
     A("")
+    A("## 0. 最终拟合参数（先看这张表）")
+    A("")
+    A("> **怎么读**：先看「能不能用」这一列 —— 它综合了闸门（值本身自不自洽）、跨引擎/跨起跑点一致性、"
+      "以及与别的独立判据（稀释序列、MW）对不对得上。")
+    A("> 「程序误差」一列只是**拟合随机误差**，它**永远不会**告诉你背景扣错了、低 q 被束挡污染了、"
+      "或样品是多分散的 —— 那类**系统误差**写在最后一列。")
+    A("")
+    A("| 环节 | 参数 | 值 | 程序误差 | 能不能用 | 误差 / 不确定度怎么读 |")
+    A("|---|---|---|---|---|---|")
+    prot = _fit_param_table(sm)
+    for step, param, value, err, ok, how in prot:
+        A("| %s | %s | %s | %s | %s | %s |" % (step, param, value, err, ok, how))
+    A("")
     A("## 一句话结论")
     A("")
     A(_one_liner(sm, rel))
@@ -227,8 +387,9 @@ def write_readme(out, extra_note=None):
           % (_fmt(rec.get("qmin"), "", 4), _fmt(rec.get("qmax"), "", 4),
              _fmt(rec.get("rg"), "", 2), _fmt(rec.get("rg_err"), "", 2),
              _fmt(rec.get("qrg_max")), _fmt(rec.get("r_sqr"), "", 4),
-             "全过闸门" if all((rec.get("gates") or {}).values()) else
-             "**未全过闸门**：" + ",".join(k for k, v in (rec.get("gates") or {}).items() if not v)))
+             "全过闸门" if all(_gate(v) for v in (rec.get("gates") or {}).values()) else
+             "**未全过闸门**：" + ",".join(k for k, v in (rec.get("gates") or {}).items()
+                                          if not _gate(v))))
     else:
         A("| 推荐 Guinier 区间 | **没有区间通过全部闸门** | 低 q 不服从单一 Guinier 定律，"
           "Rg 只能给范围，见上面那张核心表 |")
