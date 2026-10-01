@@ -557,12 +557,20 @@ def render_panel(pymol_python, render_script, fitted_pdb, overlay, out_png, kind
     orientation unconstrained), so drawing them together fakes a "model sticking out of the
     beads" that is not a measurement.
     """
-    cmd = [pymol_python, render_script, fitted_pdb, overlay, out_png, kind, str(param)]
-    p = subprocess.run(cmd, capture_output=True, text=True,
-                       cwd=workdir, env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
+    # 渲染脚本有两套 CLI，别只认一套：老版收第 5 个位置参数（fitted overlay out.png kind param），
+    # 新版是 argparse（同样的 4 个位置参数 + --level / --sphere-scale / --pse…）。先按新版试，
+    # 出现 usage 错误再退回位置参数版——两边的 param 语义一样（density=等值面 level，beads=sphere_scale）。
+    flag = "--level" if kind == "density" else "--sphere-scale"
+    base = [pymol_python, render_script, fitted_pdb, overlay, out_png, kind]
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    out = ""
+    for cmd in (base + [flag, str(param)], base + [str(param)]):
+        p = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=env)
+        out = (p.stdout or "") + (p.stderr or "")
+        if os.path.exists(out_png) or "unrecognized arguments" not in out and "usage:" not in out:
+            break
     if not os.path.exists(out_png):
-        raise RuntimeError("PyMOL produced no image: %s" % " ".join(
-            ((p.stdout or "") + (p.stderr or "")).split())[:300])
+        raise RuntimeError("PyMOL produced no image: %s" % " ".join(out.split())[:300])
     return out_png
 
 
@@ -574,7 +582,9 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("sample_dir", help="processed sample directory, e.g. .../Tube-SAXS/A5-05-1")
     ap.add_argument("--model", required=True, help="high-resolution model to embed (.pdb)")
-    ap.add_argument("--out-dir", default=None, help="output directory (default: <sample_dir>/embed)")
+    ap.add_argument("--out-dir", default=None,
+                    help="output directory (default: <processed>/_embed/<sample>, i.e. the "
+                         "sample directory's sibling - the sample dir is wiped on pipeline re-runs)")
     ap.add_argument("--bead-model", default=None,
                     help="use this existing bead model instead of building one")
     ap.add_argument("--dmax", type=float, default=None,
