@@ -35,7 +35,7 @@
 | skill | 安装 pin | scan verdict | 安装时内容哈希 |
 |---|---|---|---|
 | `assess-saxs-raw-data-quality` | `eff1219` | safe | `sha256:a9d3d37700dc7b9f` |
-| `run-a-sec-saxs-pipeline-end-to-end` | `e9c3e8e` | safe（`sec_peaks.py` 命中 `string_reversal` 的 LOW 提示，实为 `[::-1]` 排序，判 ALLOWED） | —（本轮新增 `sec_peaks.py`/`find-sec-peaks.py`、删 `results_readme.py`/`write-results-readme.py`，哈希口径见 `hermes skills check`） |
+| `run-a-sec-saxs-pipeline-end-to-end` | `9e0a1a2` | safe（`sec_peaks.py` 命中 `string_reversal` 的 LOW 提示，实为 `[::-1]` 排序，判 ALLOWED） | —（本轮新增 `sec_peaks.py`/`find-sec-peaks.py`、删 `results_readme.py`/`write-results-readme.py`，哈希口径见 `hermes skills check`） |
 | `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
 | `write-saxs-results-readme` | `f45c923` | safe | —（本轮把 `test-results.md` 加进技能目录，哈希口径见 `hermes skills check`） |
 | `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
