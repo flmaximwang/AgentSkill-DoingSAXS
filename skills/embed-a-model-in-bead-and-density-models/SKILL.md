@@ -127,6 +127,16 @@ related_skills:
 放进 `<样品>/embed/` 的产物会被下一次重跑删掉（2026-10-01 实测：一批已在 `<样品>/embed/` 跑好的结果
 被并发会话的流水线重跑清空）。放同级 `_embed/<样品>/`（与 `_summary/` `_logs/` `_rawqc/` 同层）才活得下来。
 
+### 🔴 检查点（到这五处停下来报出事实，不要自己往下决定）
+
+| 标记 | 触发条件 | 停下来做什么 |
+|---|---|---|
+| 🛑 STOP | NSD > 1（珠模型分支） | **不许**写"模型不对"。先做几何复核（E5），再回 `fit-a-high-resolution-model-to-data` 判模型本身；结论只写"这条曲线给的包络里塞不进这个模型"。 |
+| 🛑 STOP | 姿态散布 > 5 Å（电子云分支） | **不许**只报一个摆法。结论写成"至少两个分数相当的不同摆法 + 各自分数 + 散布 Å"（E7），并写明 SAXS 包络本身不唯一。 |
+| 🔴 CHECKPOINT | 要覆盖已存在的 `_embed/<样品>/` | 先列出将失效的旧数字与图（NSD / correlation / 两个 png+pse），确认输入是否同一套（模型、珠模型、`.mrc`）；不一致就先另开输出目录，别原地覆盖。 |
+| 🔴 CHECKPOINT | 要重建珠模型（`--rebuild-bead`） | 先看上游闸门：`trusted=false` 的样品，重建出来的只是"可疑 P(r) 的珠模型"，NSD 只能定性；要重跑先问，并把这个前提写进结果。 |
+| 🔴 CHECKPOINT | 要离开默认口径（`--level auto` / `--overlay-transparency` / `--smooth auto` / 手动 `--bead-model`） | 先报出当前口径的实际数字（等值面包围体积 vs `denss.log` 的 support volume、黄/白像素对比），说明为什么偏离默认。 |
+
 ## A1 — 案例 (Past Application)
 
 **1. A5-05-1：一条 20.8 Å 的小蛋白曲线，两个靶子都嵌进去了**（源B，实跑）
@@ -197,6 +207,8 @@ related_skills:
 - 与去卷积/系综类方法：本 skill 只做刚体叠合；柔性/多构象体系要系综方法（EOM/SASSIE/BilboMD），超出范围。
 
 ## E — 执行步骤 (Execution)
+
+> 每一步做完先过一眼 §🔴 检查点：五个停点（NSD>1 / 姿态散布>5 Å / 覆盖旧结果 / 重建珠模型 / 偏离默认口径）在那里必须停下报事实。
 
 1. **确认两个靶子在不在、是不是同一批产物。** 看样品目录：`models/denss.mrc`（电子云）、`models/*damfilt*|*damaver*`（已有珠模型）、`profiles/03_subtracted/subtracted.dat` + `tables/ift_summary.json`（代建珠模型用）。
    完成标准：能说出"电子云有/没有、珠模型有/没有、代建时用哪条可信 IFT"。判停点：电子云没有且不打算建 → 只做珠模型分支，并把"没有电子云"写进结果（本次 A5-05-3/4/5 就是这样）。
