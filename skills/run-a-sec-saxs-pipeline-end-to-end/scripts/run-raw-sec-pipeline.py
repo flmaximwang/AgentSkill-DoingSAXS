@@ -43,11 +43,48 @@ except Exception:  # pragma: no cover
     class NoATSASError(Exception):
         pass
 
-# 同目录的结果 README 生成器（给人看的说明；本管线最后一步自动调用）
-try:
-    from results_readme import write_results_readme
-except Exception:                                     # 单独拷脚本时别把整条管线拖死
-    write_results_readme = None
+# ------------------------------------------------------------------- 结果 README
+# README.md 由**另一个技能**统一生成（`write-saxs-results-readme`），本管线不自己写模板：
+# 两条流水线（SEC / 管式）套同一份实现 → 章节、表格列、判据、采用口径逐条对齐。
+README_SKILL = "write-saxs-results-readme"
+
+
+def find_readme_writer(explicit=None):
+    """找共享生成器 `write-readme.py`：① `--readme-script` 显式给；
+    ② 同类目下的同名技能目录（安装后 <profile>/skills/<category>/ 下互为兄弟）；
+    ③ 各 profile 里搜一遍。找不到返回 None —— README 是交付物不是计算步骤，
+    不能因为它没装就让整条管线失败（只在日志里明确告警）。"""
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(os.path.dirname(here), README_SKILL, "scripts", "write-readme.py"),
+                 os.path.join(os.path.dirname(os.path.dirname(here)), README_SKILL,
+                              "scripts", "write-readme.py")):
+        if os.path.isfile(cand):
+            return cand
+    hits = sorted(glob.glob(os.path.expanduser(
+        "~/.hermes/**/%s/scripts/write-readme.py" % README_SKILL), recursive=True))
+    return hits[0] if hits else None
+
+
+def write_results_readme(out_dir, mode, script=None):
+    """调共享实现写 `<out_dir>/README.md`（同解释器内 import；那份实现只用标准库）。
+
+    独立补写/验收（不重算）：`python <writer> <目录>`、`python verify-results-folder.py <目录>`。
+    """
+    writer = find_readme_writer(script)
+    if writer is None:
+        raise RuntimeError(
+            "找不到 %s：hermes skills install flmaximwang/AgentSkill-DoingSAXS/skills/%s "
+            "--category saxs -y" % (README_SKILL, README_SKILL))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "saxs_readme_common", os.path.join(os.path.dirname(writer), "readme_common.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    path, keys, _f = mod.write_readme(out_dir, mode)
+    return path, len(keys or [])
+
 
 FMT = argparse.ArgumentDefaultsHelpFormatter
 STEPS = ["integrate", "series", "guinier", "ift", "mw", "shape", "report"]
@@ -528,6 +565,9 @@ def main():
     ap.add_argument("--denss-mode", choices=["Fast", "Slow", "Custom"], default="Fast",
                     help="DENSS 模式（Fast 出得快、Slow 收敛更好、耗时更长）")
     ap.add_argument("--n-models", type=int, default=4, help="DAMMIF 模型数")
+    ap.add_argument("--readme-script", default=None,
+                    help="write-saxs-results-readme 的 scripts/write-readme.py 路径；"
+                         "默认自动找（同类目下的同名技能目录），找不到只在日志里告警")
     ap.add_argument("--dammif-mode", choices=["Fast", "Slow", "Custom"], default="Fast",
                     help="DAMMIF 模式（Fast 出得快；Slow 更彻底、耗时显著更长）")
     ap.add_argument("--model-format", choices=["cif", "pdb"], default="cif",
@@ -602,13 +642,13 @@ def main():
                 aatsas_dir=args.atsas_dir, timestamp=time.strftime("%Y-%m-%d %H:%M:%S"))
     with open(os.path.join(out, "run_meta.json"), "w") as fh:
         json.dump(meta, fh, indent=2, ensure_ascii=False, default=str)
-    # 最后一步：把结果目录写成给人看的 README.md（人看不懂目录结构时先看它）
-    if write_results_readme is not None:
-        try:
-            p = write_results_readme(out, prefix)
-            log(f"  → 结果说明：{os.path.relpath(p, out)}（先看这份，再看其它文件）")
-        except Exception as exc:
-            log(f"  ！README.md 生成失败：{type(exc).__name__}: {exc}")
+    # 最后一步：把结果目录写成给人看的 README.md（由 write-saxs-results-readme 统一生成）
+    try:
+        p, n_keys = write_results_readme(out, "sec", getattr(args, "readme_script", None))
+        log(f"  → 结果说明：{os.path.relpath(p, out)}（先看这份，再看其它文件；{n_keys} 条关键数字）")
+        log(f"     验收：python <{README_SKILL}>/scripts/verify-results-folder.py {out}")
+    except Exception as exc:
+        log(f"  ！README.md 未生成：{type(exc).__name__}: {exc}")
     log(f"完成。清单见 {out}/run_meta.json")
 
 

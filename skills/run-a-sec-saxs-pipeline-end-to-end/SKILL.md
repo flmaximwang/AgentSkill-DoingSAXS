@@ -19,6 +19,8 @@ metadata:
         relation: composes-with
       - slug: fit-a-high-resolution-model-to-data
         relation: composes-with
+      - slug: write-saxs-results-readme
+        relation: composes-with
 ---
 
 # 端到端跑一条 SEC-SAXS 系列（全程 RAW）
@@ -152,7 +154,7 @@ python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> -
 | 分子量 | `mw_vc` / `mw_vp` / `mw_bayes` | `tables/mw.csv` |
 | 形状重建 | `denss`（**电子云，RAW 原生，默认总跑**）+ `dammif`/`damaver`（**珠模，有 ATSAS 才跑**） | `models/<前缀>_denss.mrc`（+`_support.mrc`/`_map.fit`/`_stats_by_step.dat`/`_denss.log`）；有 ATSAS 时另有 `models/<前缀>_dammif_0N-1.cif`（**ATSAS≥4.0 写 `.cif`，不是 `.pdb`**）+ DAMAVER 的 `<前缀>_damaver-{distances.txt,global-summary.txt,global-fsc.dat,cluster*-summary.txt,global-damaver.cif}` |
 | 报告 | `save_report(pdf, dir, profiles, ifts, series)` | `reports/<前缀>_raw_report.pdf` |
-| **结果说明（自动，最后一步）** | 纯读产物（`results_readme.py`，不重算） | **`<产物根>/README.md`** —— 给人看的目录导航 + 关键数字 + 判读红线 + 本次告警 |
+| **结果说明（自动，最后一步）** | 纯读产物（`write-saxs-results-readme` 的 `readme_common.py`，不重算） | **`<产物根>/README.md`** —— 结论速览 + 参数明细表 + 关键结果 + 判读红线 + 本次告警（与管式那条逐条对齐） |
 
 **形状重建两个都要**（`--model-engine auto`）：**电子云（DENSS，`.mrc`）与珠模（DAMMIF，`.pdb`）是同一份 IFT 的两种重建，互不替代**——
 DENSS 是 RAW 原生（numba），`Fast` 模式实测几秒到几十秒就出；DAMMIF 是 ATSAS 可执行文件的外壳，**没装 ATSAS 时自动只出电子云**（并在日志里明说），不要因此把 `models/` 留空。
@@ -162,25 +164,25 @@ DENSS 是 RAW 原生（numba），`Fast` 模式实测几秒到几十秒就出；
 （`setQrange` 截到该区间）单独存 `.dat` 并进 RAW 报告，同框图用 **RAW 返回的 Rg/I0** 画模型线（不是自写拟合）。
 表里给全 `Rg / I0 / rg_err / i0_err / q_min / q_max / qRg_min / qRg_max / r²`，据此判断"哪段才合适"。
 
-### Step 4 — 结果目录里的 `README.md`（**别再让人对着文件夹发呆**）
+### Step 4 — 结果目录里的 `README.md`（交给 `write-saxs-results-readme`）
 
-管线**最后一步自动**写 `<产物根>/README.md`：只读产物（`run_meta.json` / `tables/*.csv` /
-`series/ranges.json` / `models/` 清单），**不重新拟合、不臆造数字**，每一节都能指回某个文件。
+管线**最后一步自动**调用隔壁技能 `write-saxs-results-readme` 的 `readme_common.write_readme(out, "sec")`
+写 `<产物根>/README.md`：只读产物（`run_meta.json` / `tables/*.csv` / `series/ranges.json` / `models/` 清单），
+**不重新拟合、不臆造数字**。本 skill **不再自带 README 模板** —— 管式那条流水线用的是同一份实现，
+所以两份 README 的章节、表格列、判据与「采用区间/采用那一支 P(r)」口径逐条对齐。
+要改格式/加一节，去 `write-saxs-results-readme` 改，别在这里就地改。
 
-**开头必须是"最终拟合参数 + 误差 + 可靠性 + 误差怎么读"三张表**（用户明确要求：先看结论，且要表格）：
+README 的 8 节（固定顺序）：结论速览（含「先看这几个文件就够」）→ 最终拟合参数（明细表：环节/参数/值/
+程序误差/能不能用/误差怎么读）→ 关键结果 → 这个文件夹里有什么（按建议阅读顺序）→ 每个数字的判据 →
+这次没做的 / 不能信的（含各 IFT 引擎全表 + 三条闸门）→ 本次用的参数（复现用）→ 想自己复核（+缩写+目录树）。
+开头那两张表必须带**可靠性列**与**误差怎么读**列：程序误差只是该区间内的最小二乘标准误差，
+真不确定度看跨区间一致性、换起跑点后参数怎么变。
 
-| 表 | 内容 | 关键写法 |
-|---|---|---|
-| **表 1 最终主拟合** | Rg ± `rg_err`、I(0) ± `i0_err`、拟合的 q 区间与 qRg 区间、`r²`、**跨区间一致性**、可靠性列 | 「采用区间」按 **收敛 + qRg 落在 0.3–1.35 + r² 最高**挑；一致性只统计**可用区间**（`rg>0` 且 `r²≥0.9`），并把被排除的区间**列出来说明为什么排除**（一票否决的错误做法：把 `rg=-1` 的失败区间也算进一致性） |
-| **表 2 其它参数** | 每支 IFT 的 Dmax / Rg ± `rg_err`（含 `Dmax/Rg` 比与判词）、MW 四法（Vc 带 ± ，Bayesian 带 CI）、DENSS 的 χ²/Rg/support、DAMMIF×N 的 χ²/Rg/Dmax/MW、DAMAVER 平均 NSD ± std | 每行**必须给可靠性**：🟢 可用 / 🟡 有限 / 🔴 不可用，并写一句"为什么"（χ² ≤3 可靠、3–5 有限、>5 先修曲线；Dmax/Rg ≤3.2 正常、>4.5 判不可用；NSD ≤2 同一类形状） |
-| **表 3 误差怎么读** | 每条误差**是什么 / 不包含什么 / 什么时候不能用** | 清楚区分**随机误差**（`rg_err` 只是该区间内最小二乘标准误差，区间收窄它必然变小）与**系统误差**（低 q 污染、背景失配、Dmax 选择、浓度假设）；MW 的 ± 只来自 Vc 一种方法；DAMAVER 的 NSD 是模型间差异、不是与数据的拟合误差 |
-
-之后才是：输入与处理概要 → 只看三个文件 → 目录导航 → 关键数字明细 → 复现命令 → 判读红线 → 本次告警 → 缩写。
-
-给**已跑完但没 README**的旧结果目录补写（不动数据）：
+管线找不到那份实现时**只告警不报错**（README 是交付物，不是计算步骤）。手工补写/验收（旧目录、不动数据）：
 
 ```bash
-python write-results-readme.py --out <产物根>
+python <write-saxs-results-readme>/scripts/write-readme.py <产物根>       # 补写 README.md
+python <write-saxs-results-readme>/scripts/verify-results-folder.py <产物根>   # 验收：结构与关键结果对齐
 ```
 
 ## 复核点（跑完先看这几处，再看数字）
@@ -274,9 +276,10 @@ python write-results-readme.py --out <产物根>
   撞到过两次半成品（`step_ift` 改返回 5 值而 `main` 还解 4；`step_shape` 里 `itf`/`ift` 拼写），
   两次都是"跑到一半 ValueError/NameError"。稳妥做法：`git log -1` 记下 revision → `cp` 到 scratch 当快照 →
   跑快照 → 报告里写清用的哪个 sha。
-- **"结果看不懂"是缺交付物，不是缺解释**：产物目录必须有一份 `<产物根>/README.md`（管线最后一步自动写，
-  旧目录用 `write-results-readme.py --out <目录>` 补）。它只读产物、不重算，所以写完要和 `run_meta.json`
-  的时间戳对一下（避免"README 比数据旧"）。数据本身不可用的系列，另写 `结果不可用-README.md`（见下条）。
+- **"结果看不懂"是缺交付物，不是缺解释**：产物目录必须有一份 `<产物根>/README.md`（管线最后一步由
+  `write-saxs-results-readme` 自动写，旧目录用它的 `write-readme.py <目录>` 补）。它只读产物、不重算，
+  **必须最后写**（README 比 `tables/*.csv` 旧 = 读者拿到旧数字；`verify-results-folder.py` 会把这条标红）。
+  数据本身不可用的系列，另写 `结果不可用-README.md`（见下条）。
 - **表里 `rg = -1` 不是负数，是 RAW 的失败哨兵值**（该区间的 Guinier 拟合没收敛/点数不够）——按"此区间不可用"读，
   不要当成数值；同理 `r² < 0` 表示拟合比取平均还差。
 - **裁剪坐标：两个轴都从"大的那头"数** → `row = H−1−y`、**`col = W−1−x`**（即 180° 旋转；本机 BL19U2
@@ -292,4 +295,6 @@ python write-results-readme.py --out <产物根>
 - **script-raw-with-the-python-api** — RAWAPI 的骨架与返回元组顺序（本 skill 的脚本就是它的落点）。
 - **correct-sec-saxs-baseline** — 扣减后仍漂移时选 Linear/Integral，以及本 skill 用的监视器归一套路。
 - **configure-bioxtas-raw-for-a-dataset** — 换实验日/仪器时先核对 `.cfg`。
+- **write-saxs-results-readme** — 结果目录的 README 与验收（本 skill 第 4 步调它；管式那条也调它，
+  所以两份 README 逐节对齐）。
 - **evaluate-a-shape-reconstruction** / **fit-a-high-resolution-model-to-data** — 重建与高分辨模型对照。

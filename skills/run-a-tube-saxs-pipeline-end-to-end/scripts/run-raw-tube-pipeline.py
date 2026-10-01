@@ -26,6 +26,49 @@ import numpy as np
 import bioxtasraw.RAWAPI as raw
 
 
+# ------------------------------------------------------------------- 结果 README
+# README.md 由**另一个技能**统一生成（`write-saxs-results-readme`），本管线不自己写模板：
+# 两条流水线（SEC / 管式）套同一份实现 → 章节、表格列、判据、采用口径逐条对齐。
+README_SKILL = "write-saxs-results-readme"
+
+
+def find_readme_writer(explicit=None):
+    """找共享生成器 `write-readme.py`：① `--readme-script` 显式给；
+    ② 同类目下的同名技能目录（安装后 <profile>/skills/<category>/ 下互为兄弟）；
+    ③ 各 profile 里搜一遍。找不到返回 None —— README 是交付物不是计算步骤，
+    不能因为它没装就让整条管线失败（只在日志里明确告警）。"""
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(os.path.dirname(here), README_SKILL, "scripts", "write-readme.py"),
+                 os.path.join(os.path.dirname(os.path.dirname(here)), README_SKILL,
+                              "scripts", "write-readme.py")):
+        if os.path.isfile(cand):
+            return cand
+    hits = sorted(glob.glob(os.path.expanduser(
+        "~/.hermes/**/%s/scripts/write-readme.py" % README_SKILL), recursive=True))
+    return hits[0] if hits else None
+
+
+def write_results_readme(out_dir, mode, script=None):
+    """调共享实现写 `<out_dir>/README.md`（同解释器内 import；那份实现只用标准库）。
+
+    独立补写/验收（不重算）：`python <writer> <目录>`、`python verify-results-folder.py <目录>`。
+    """
+    writer = find_readme_writer(script)
+    if writer is None:
+        raise RuntimeError(
+            "找不到 %s：hermes skills install flmaximwang/AgentSkill-DoingSAXS/skills/%s "
+            "--category saxs -y" % (README_SKILL, README_SKILL))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "saxs_readme_common", os.path.join(os.path.dirname(writer), "readme_common.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    path, keys, _f = mod.write_readme(out_dir, mode)
+    return path, len(keys or [])
+
+
 # --------------------------------------------------------------------------- helpers
 def log(*a):
     print("[%s]" % time.strftime("%H:%M:%S"), *a, flush=True)
@@ -572,7 +615,10 @@ def node_mw(ctx, sub, vp_mw=None):
         fh.write("method,MW_kDa,aux,note\n")
         for k, v in mw.items():
             if isinstance(v, dict):
-                fh.write("%s,%s,%s,%s\n" % (k, v.get("mw", ""), v.get("aux", ""),
+                # aux 用 ';' 连接成一个字段：直接 str(list) 会因内含逗号把列撑开（表头与数据
+                # 错位，csv.DictReader 读歪；旧文件仍能被 write-saxs-results-readme 正确读回）
+                aux = ";".join(str(x) for x in (v.get("aux") or []))
+                fh.write("%s,%s,%s,%s\n" % (k, v.get("mw", ""), aux,
                                             v.get("failed", "")))
             else:
                 fh.write("%s,,,,%s\n" % (k, v))
@@ -819,12 +865,14 @@ def main():
     ap.add_argument("--atsas-dir", default=None,
                     help="ATSAS bin 目录；默认自动探测（/Applications/ATSAS*/bin、~/ATSAS*/bin…）")
     ap.add_argument("--save-frames", action="store_true", help="write every frame as .dat")
+    ap.add_argument("--readme-script", default=None,
+                    help="write-saxs-results-readme 的 scripts/write-readme.py 路径；"
+                         "默认自动找（同类目下的同名技能目录）")
     ap.add_argument("--steps", default="ift,mw,shape,report,workspace",
                     help="optional nodes to run; the backbone (integrate, average, "
                          "control scaling, subtract, multi-range Guinier) always runs")
     args = ap.parse_args()
     steps = {s.strip() for s in args.steps.split(",") if s.strip()}
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # for readme_for_run
 
     sample_dir = os.path.abspath(os.path.expanduser(args.sample_dir))
     key = args.sample_key or os.path.basename(sample_dir.rstrip("/"))
@@ -886,17 +934,18 @@ def main():
                shape=denss_res, n_frames=len(sam_files) + len(ctl_files),
                n_frame_outliers=sum(1 for r in frames if r.get("outlier"))),
           os.path.join(ctx.out, "summary.json"))
-    # human-readable guide to this result folder (批处理时每个样品一份)
-    try:
-        import readme_for_run
-        readme_for_run.write_readme(ctx.out)
-        log("README.md -> %s (结果说明与判据)" % os.path.join(ctx.out, "README.md"))
-    except Exception as e:                                   # never fail a run over this
-        log("WARNING: README.md not written: %s" % e)
-    try:                            # figures come last: a plotting error must not lose numbers
+    try:                            # 图先出：图炸了也不能丢数字
         plots(ctx, sub, rows, rec, ift, sweep)
     except Exception as e:
-        log("WARNING: plots failed (%s) - summary.json / README.md are already on disk" % e)
+        log("WARNING: plots failed (%s) - summary.json etc. are already on disk" % e)
+    # README.md 必须**最后**写（它比所有产物新 = 读者拿到的不是旧数字）；
+    # 由 write-saxs-results-readme 统一生成（两条流水线同一套章节与判据）。
+    try:
+        p, n_keys = write_results_readme(ctx.out, "tube", getattr(args, "readme_script", None))
+        log("README.md -> %s (结果说明与判据，%d 条关键数字)" % (p, n_keys))
+        log("验收：python <%s>/scripts/verify-results-folder.py %s" % (README_SKILL, ctx.out))
+    except Exception as e:                                   # never fail a run over this
+        log("WARNING: README.md not written: %s" % e)
     log("done -> %s" % ctx.out)
 
 

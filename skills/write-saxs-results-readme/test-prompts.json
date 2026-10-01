@@ -1,0 +1,69 @@
+{
+  "skill": "write-saxs-results-readme",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "这个结果目录准备交给合作者了，先帮我看看结构齐不齐、README 里写的东西对不对。",
+      "expected_behavior": "跑 verify-results-folder.py <目录>：四道检查逐条报（结构 must/should、README 8 节、README↔产物关键数字、产物↔产物 json↔csv），给出 🟢🟡🔴 与退出码；缺 must 产物或关键数字追不回原文一律红，先 write-readme.py 重写再交付。",
+      "notes": "正面场景：验收 + 交付前检查，本 skill 的主入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "两条流水线（SEC 的和管式的）产出的 README 格式不一样，同一个数在两份里位置都不同，能统一吗？",
+      "expected_behavior": "答：README 的模板与实现只有一份（本 skill 的 scripts/readme_common.py，8 节固定顺序、§1/§2 固定行、§4 判据表两种模式完全相同），两条流水线都调它；「采用区间/采用那一支 P(r)/三档可用性」是同一套口径（产物闸门全过才采信推荐区间，标了 NOT recommended 就退回通用规则）。要改格式改这里，不要在各流水线里就地改。",
+      "notes": "正面场景：对齐诉求（本 skill 存在的理由）。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "半年前跑的那批管式数据只有结果没有 README，能补一份人看得懂的吗？",
+      "expected_behavior": "write-readme.py <结果目录>（只读 summary.json / tables/*.csv / models/ 清单，不重新拟合、不臆造数字）；补完再用 verify-results-folder.py 确认关键数字都能追回产物，并检查 README 是不是比 tables/*.csv 新（关键表更新过就要重写）。",
+      "notes": "正面场景：旧目录补写。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "README 里写着 Rg = 18.97 Å，我怎么确认它不是手抄错的？",
+      "expected_behavior": "答：README 的每个数字都由 readme_common.py 从产物现读（tables/guinier_multi_range.csv / summary.json / run_meta.json / models/），verify-results-folder.py 会把「该出现的关键数字」逐条回查 README 原文，并对 json ↔ csv 两条独立路径做交叉核对（CSV 按自己的精度比，避免把四舍五入当矛盾）。查不到原文 = 🔴。",
+      "notes": "正面场景：可追溯性。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "管线跑完了我想知道这个文件夹里有哪些文件、先看哪个、哪些是最终产物、哪些是中间产物。",
+      "expected_behavior": "写/看结果目录的 README.md 第 3 节「这个文件夹里有什么（按建议阅读顺序）」：无序列表逐条 路径 —— 是什么（什么时候看），只列真实存在的文件，末尾汇总未列出的中间产物；先看那三条（管式 qc.png / SEC 报告+series_plot.png / 最终扣减曲线）。",
+      "notes": "正面场景：文件导航。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "这条扣减曲线 Rg 取哪一段、q_max 到多少才合适？",
+      "expected_behavior": "走 assess-guinier-fit-quality（取点判据），不是结果目录的写法问题。",
+      "notes": "诱饵类型：README 里有 Rg，但问的是判据。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "把这批管式 tif 端到端跑一遍，各个节点的 dat 都要给我。",
+      "expected_behavior": "走 run-a-tube-saxs-pipeline-end-to-end（那条流水线会调本 skill 生成 README，但跑流程本身不归这里）。",
+      "notes": "诱饵类型：同一批数据，但问的是跑流程。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "珠模平均 NSD 0.8、分成 2 个 cluster，这个形状重建能用在论文里吗？",
+      "expected_behavior": "走 evaluate-a-shape-reconstruction（重建评估判据）；本 skill 只负责把这个数字正确地写进 README 并标明判档。",
+      "notes": "诱饵类型：README 会写 NSD，但『能不能用』的判据归那条。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "批处理跑完 22 个样品，帮我在结果根目录写一份总览 README，把每个样品一行列出来。",
+      "expected_behavior": "走 result-folder-readme（批处理**根目录**汇总 README 的写法）；本 skill 管的是每个样品目录里那份 README。",
+      "notes": "诱饵类型：也是 README，但层级不同（根目录汇总 vs 单样品说明）。"
+    }
+  ]
+}

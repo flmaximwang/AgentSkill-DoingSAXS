@@ -25,6 +25,8 @@ metadata:
         relation: sibling
       - slug: organize-batch-saxs-dataset
         relation: composes-with
+      - slug: write-saxs-results-readme
+        relation: composes-with
 ---
 
 # 端到端跑一批管式/静态 SAXS 帧（全程 RAW）
@@ -147,17 +149,20 @@ python run-raw-tube-pipeline.py --sample-dir <目录> --cfg <日期>.cfg --out-d
 脚本自己只做**残差统计**（`chi2_red` 与 smile/frown 符号），不做拟合。
 
 完成标准：`summary.json` 里每个节点都有值或明确的失败原因（含每个形状重建子项：电子云 / 每个珠模 / DAMAVER）；
-`profiles/04_guinier/` 的份数 = 表里的区间数；产物根里有一份 **`README.md`**（`readme_for_run.py` 生成，随每次运行刷新）。
+`profiles/04_guinier/` 的份数 = 表里的区间数；产物根里有一份 **`README.md`**（由 `write-saxs-results-readme`
+在**图之后**生成 = 它比所有产物新），且 `verify-results-folder.py <产物根>` 退出码为 0。
 
-**每个结果文件夹必须能"自己讲清楚"**：`README.md` 按固定顺序写
-⓪ **最终拟合参数表**（第 0 节，放最前面）：每个环节一个参数一行 —— 环节 / 参数 / 值 / 程序误差 /
-**能不能用**（闸门+跨引擎一致性+与独立判据是否对得上）/ **误差怎么读**（程序误差只是拟合随机误差；
-真不确定度看区间漂移、换起跑点后参数怎么变、跨样品一致性）；
-① 一句话结论（能不能用/低 q 可不可信/P(r)、电子云、珠模有没有、NSD 多少）② 关键结果表（每格都带"怎么看"）
-③ 里面每个文件是什么、什么时候看 ④ 每个数字的判据（好/勉强/不可信）
-⑤ 这次没做的事与原因（IFT 没过闸门 → 没 P(r)；DENSS 失败；珠模 χ² 偏大是数据问题；没 ATSAS）
-⑥ 怎么自己复核（workspace 怎么开、表在哪、怎么重跑）。
-单独补跑某次 README（不重算）：`readme_for_run.py <结果目录>`。
+**每个结果文件夹必须能"自己讲清楚"**，但 README 的模板与实现**不在本 skill 里**：它由隔壁技能
+`write-saxs-results-readme` 统一生成（本管线最后一步调 `readme_common.write_readme(out, "tube")`，
+SEC 那条调的是同一份实现 → 两份 README 的 8 节、表格列、判据表与采用口径逐条对齐）。
+**要改格式/判据文本就去那边改，别在这里就地改。**
+
+README 的 8 节（固定顺序）：结论速览（含「只看这几个文件就够」）→ 最终拟合参数（明细表：环节/参数/值/
+程序误差/**能不能用**（闸门+跨引擎一致性+与独立判据对不对得上）/**误差怎么读**（程序误差只是拟合随机误差；
+真不确定度看区间漂移、换起跑点后参数怎么变））→ 关键结果（每格带"怎么看"）→ 这个文件夹里有什么
+（按建议阅读顺序，无序列表）→ 每个数字的判据（好/勉强/不可信）→ 这次没做的与原因（IFT 没过闸门 → 没 P(r)；
+DENSS 失败；珠模 χ² 偏大是数据问题；没 ATSAS）→ 本次用的参数（复现命令行）→ 想自己复核。
+手工补写/验收（不重算）：`write-readme.py <目录>` / `verify-results-folder.py <目录>`（都在那个 skill 的 `scripts/`）。
 
 ### Step 2 — 一批样品一起跑 + 汇总（整条稀释序列/整批数据）
 
@@ -227,6 +232,12 @@ python plot-tube-overview.py "$PRO"        # → $PRO/_summary/overview.png
   但 DAMMIF 对数据的 χ² 会直接炸。**所以珠模的 IFT 必须用干净窗口**（本 skill 用 Guinier 推荐区间的起点；`--qmin` 只砍到 0.010 不够）。
 - **DAMMIF 的 Fast/Slow 模式只写 `.cif`**：RAW 只在 Custom 模式传 `--model-format`（SASCalc.py:1812 那个分支），
   所以 `--model-format pdb` 在 Fast 下会**找不到文件**而报 `FileNotFoundError`。默认就用 `cif`（ChimeraX/PyMOL 都能开）。
+- **本 skill 不自带 README 模板**：README 由 `write-saxs-results-readme` 生成（两条流水线共用同一份
+  实现与同一套采用口径）。找不到那个技能时管线**只告警**、不写 README —— 它会打印安装命令
+  （`hermes skills install flmaximwang/AgentSkill-DoingSAXS/skills/write-saxs-results-readme --category saxs -y`）；
+  脚本被单独拷走时用 `--readme-script <路径>` 指定。
+- **`tables/mw.csv` 的 `aux` 用 `;` 连接**（旧版直接写 Python 列表，内含逗号会把列撑开、表头与数据错位；
+  读取方按位置读所以两种都能吃）。
 - **稀释序列不要只看最稀那条**：本机 A5-05-1…6 是 2 倍稀释序列（I0 65.5/35.8/20.2/10.9/5.3/2.4），
   最稀的一条低 q 信噪比最差、区间选择最不稳；判 Rg 要沿序列看一致性。
 
@@ -239,4 +250,6 @@ python plot-tube-overview.py "$PRO"        # → $PRO/_summary/overview.png
 - **compute-and-validate-p-of-r** — BIFT/GNOM/DIFT 怎么选、Dmax 怎么定、P(r) 判据。
 - **choose-a-molecular-weight-method** — 浓度未知时哪几法能用。
 - **evaluate-a-shape-reconstruction** / **script-raw-with-the-python-api** — 重建评估（a-score/NSD/聚类怎么读）/ RAWAPI 骨架与返回元组。
+- **write-saxs-results-readme** — 结果目录的 README 与验收（本 skill 最后一步调它；SEC 那条也调它，
+  所以两份 README 逐节对齐）。
 - ATSAS 命令行本身（GNOM/DAMMIF/DAMAVER/DATMW 的参数与输出格式）→ `AgentSkill-UsingATSAS`。
