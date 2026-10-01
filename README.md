@@ -8,12 +8,14 @@
 |---|---|---|
 | 2026-10-01 管式批次（BL19U2，11 个样品：A5-05-1…6 稀释序列 + 5705/877-apo/877-4zinc/97df/BSA）的实跑 | 逐帧质量（漂移/离群/对比度/SNR/误差诚实度）、低 q 上翘的三道归因检验、beamstop 几何与 q_min 依据 | [`skills/assess-saxs-raw-data-quality/`](skills/assess-saxs-raw-data-quality/) |
 
-**2 个 skill**：1 个评估/归因原子技能（24 个候选判据 → 通过 1 个）+ 1 条端到端 SEC 流水线（工程产物）。前者的流程：：真实数据上磨出来的一条流程——
+**2 个 skill**：1 个评估/归因原子技能（24 个候选判据 → 通过 1 个）+ 1 条端到端 SEC 流水线（工程产物）。评估/归因那条的流程：：真实数据上磨出来的一条流程——
 **先量几何（中心/掩膜/q_min）→ 逐帧 QC → 扣减后形状 → 低 q 上翘归因（空白-空白 / 背景形状失配 / 2D 差分）→ 完整结论（排除了什么、还剩什么、下一步做什么实验）**。
 它**不做任何拟合**：拟合归 `AgentSkill-UsingBioXTASRAW` 的 15 个 skill，这里只判"那些拟合肥不肥"。
 
 > **状态**：已 push 到 <https://github.com/flmaximwang/AgentSkill-DoingSAXS>（**public**，远程用 SSH，default=main）；
-> 已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，scan verdict **SAFE**，pin `eff1219`）。
+> 已安装进 default profile 的 **`saxs`** 类目（三段式标识符 + skills.sh/community，scan verdict **SAFE**）：
+> `assess-saxs-raw-data-quality`（pin `eff1219`）、`run-a-sec-saxs-pipeline-end-to-end`（pin `fc148f6`）。
+> 后者并入时另加了一项交付物：**结果目录里自动写 `README.md`**（只读产物、不重算；见该 skill 的 Step 4）。
 
 ## 索引
 
