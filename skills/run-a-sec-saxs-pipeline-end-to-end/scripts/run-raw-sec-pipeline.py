@@ -193,14 +193,21 @@ def step_ranges_and_subtraction(profiles, st, out, prefix, args):
     # ---- 可选：给下游（IFT/MW）用的低 q 裁剪。低 q 被寄生散射/聚集污染时，
     # BIFT/DENSS 会给出离谱的 Dmax（本机实测未裁时 Dmax 417 Å / Rg 149 Å）。裁剪用 RAW 自己的 setQrange，
     # 不是自写拟合：只是把"哪些点参与"变成显式参数。
-    if args.trim_qmin:
+    if args.trim_qmin or args.trim_qmax:
         old_range = sample_profile.getQrange()
-        i0i = qindex(sample_profile, args.trim_qmin)   # 相对当前 getQ() 的下标
+        i0i = qindex(sample_profile, args.trim_qmin) if args.trim_qmin else 0      # 相对当前 getQ() 的下标
+        if args.trim_qmax:                                                          # 上界：模型表达不了高 q 细结构时用
+            i1i = qindex(sample_profile, args.trim_qmax) or len(sample_profile.getQ())
+        else:
+            i1i = old_range[1] - old_range[0]
         sample_profile = copy.deepcopy(sample_profile)
-        sample_profile.setQrange((old_range[0] + i0i, old_range[1]))  # setQrange 用绝对下标 q[start:end]
-        save_dat(sample_profile, "sample_avg_qmin%.4f.dat" % args.trim_qmin, sample_dir)
-        log(f"下游（Guinier 表/IFT/MW）改用裁剪后曲线：q ≥ {sample_profile.getQ()[0]:.4f} 1/A"
-            f"（{len(sample_profile.getQ())} 点）")
+        # setQrange 用绝对下标 q[start:end]
+        sample_profile.setQrange((old_range[0] + i0i, old_range[0] + i1i))
+        save_dat(sample_profile, "sample_avg_qmin%s_qmax%s.dat" % (
+            "%.4f" % args.trim_qmin if args.trim_qmin else "unset",
+            "%.4f" % args.trim_qmax if args.trim_qmax else "unset"), sample_dir)
+        log(f"下游（Guinier 表/IFT/MW/重建）改用裁剪后曲线：q {sample_profile.getQ()[0]:.4f}–"
+            f"{sample_profile.getQ()[-1]:.4f} 1/A（{len(sample_profile.getQ())} 点）")
 
     # ---- 逐帧参数（注意：SECM 的 getRg/getI0/getVcMW/getVpMW 返回 (值, 误差) 两个数组）
     frames = np.asarray(series.getFrames())
@@ -364,7 +371,11 @@ def step_ift(sample_profile, st, out, prefix, atsas_dir, ift_dmax=None):
     dmax = None
     if atsas_dir:
         try:
-            dmax = raw.auto_dmax(sample_profile)
+            # 截断后的曲线（尤其裁掉高 q）常让 auto_dmax 返回 -1 → GNOM 直接报 'rmax got -1'。
+            # 有显式 --ift-dmax 就用它，否则才让 RAW 自己定。
+            dmax = float(ift_dmax) if ift_dmax else raw.auto_dmax(sample_profile)
+            if not dmax or dmax <= 0:
+                raise RuntimeError(f"auto_dmax 返回 {dmax}（曲线被截断后常见）→ 请用 --ift-dmax 显式指定 Dmax")
             g = raw.gnom(sample_profile, dmax)
             gnom_ift = g[0]
             raw.save_ift(gnom_ift, f"{prefix}_gnom.out", os.path.join(out, "ifts"))
@@ -498,6 +509,9 @@ def main():
     ap.add_argument("--ift-dmax", type=float, default=None,
                     help="显式 Dmax（A）→ 用 RAW 原生 DIFT 生成 DENSS 的输入 IFT。IFT/DENSS 被低 q 拖坏时用"
                          "（经验起手：Dmax ≈ 3×Guinier Rg）；不给则用 BIFT 自动定出的 IFT")
+    ap.add_argument("--trim-qmax", type=float, default=None,
+                    help="下游分析前丢掉 q 高于此值的点（1/A）——判断\"高 q 是模型表达不出来还是数据不好\"时用："
+                         "同一条曲线降 q_max 后 χ² 若明显回落，说明是模型/信息量问题，不是样品问题")
     ap.add_argument("--trim-qmin", type=float, default=None,
                     help="下游分析（Guinier 表/IFT/MW）前丢掉 q 低于此值的点（1/A）；低 q 被寄生散射污染时用")
     ap.add_argument("--guinier-ranges", default=None,

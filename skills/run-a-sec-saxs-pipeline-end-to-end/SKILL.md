@@ -132,7 +132,7 @@ python crop-video-normalized.py --series-dir <tif 目录> --norm-csv <out>/norm/
 python run-raw-sec-pipeline.py --series-dir <tif 目录> --out-dir <产物根> --cfg <日期>.cfg \
   [--steps integrate,series,guinier,ift,mw,shape,report] \
   [--buffer-range "s,e[;s,e]"] [--sample-range s,e] [--baseline none|linear|integral] \
-  [--trim-qmin q] \
+  [--trim-qmin q] [--trim-qmax q] \
   [--guinier-ranges "qlo:qhi,..."] \
   [--model-engine auto|denss|dammif|both|none] [--denss-mode Fast|Slow|Custom] \
   [--n-models 4] [--symmetry P1] [--atsas-dir <ATSAS>/bin]
@@ -214,6 +214,12 @@ python write-results-readme.py --out <产物根>
 - **`--buffer-range` 优先给峰前 + 峰后两段**（`"560,620;800,880"`）：SEC 峰后的基线常不等于峰前
   （窗口污染 / 束位漂移）。本机实测同一条 BSA 曲线，只用峰前一段时 Guinier 的 Rg 在 38–117 Å 之间随区间乱跳；
   换成峰前+峰后两段后落到 **23.7–27.4 Å、r² 0.91–0.99**（BSA 单体理论 ≈29 Å）。
+- **`--trim-qmax`：判断"高 q 的失配是模型表达不出来，还是数据本身不好"**。同一条曲线把 q 上界压到
+  0.25 / 0.15 再跑一遍，看 χ² 往哪边走：**本例 4LI2-676**（Rg 15.3 Å 的小蛋白，珠模 χ²=4.66）——
+  IFT 的 χ² 反而**升**（1.98 → 2.6 → 3.1），说明失配**不是**高 q 独有，低/中 q 段本来就有平滑 P(r) 表达不了的结构；
+  而珠模的 Σχ² 有 66% 来自 q 0.2–0.46 段（那里 σ 小、点数多，系统性偏 ~2σ）。两件事一起读才对：
+  **"点多、误差小的高 q 段"会把模型表达能力的不足放大成 χ²**，但**不能**用它来解释整条曲线的失配。
+  裁高 q 后 `auto_dmax` 常返回 −1 让 GNOM 报 `expected value ≥ 0 for option 'rmax', got '-1'` → 这时配 `--ift-dmax` 显式给 Dmax 即可。
 - **低 q 被寄生散射污染会把 IFT 的 Dmax 拖到离谱值**：同一曲线未裁 q 时 BIFT 给 **Dmax=417 Å / Rg=149 Å**。
   用 `--trim-qmin 0.017` 显式裁掉低 q 段（内部就是 RAW 自己的 `setQrange`，不是自写拟合），再跑 IFT/MW。
 - **ATSAS 接线三件事**（装好 ATSAS 后要一次对上）：① `--atsas-dir` 必须指到 **`bin` 这一级**
