@@ -1,0 +1,139 @@
+{
+  "skill": "run-a-tube-saxs-pipeline-end-to-end",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "把这批管式 SAXS 数据端到端跑一遍：图像→平均→扣减→Rg/IFT/分子量→3D→报告，全程用 RAW，各个节点的 profile 都要给我 dat。",
+      "expected_behavior": "按 Step 1 跑 run-raw-tube-pipeline.py（--sample-dir/--cfg/--out-dir），节点按 profiles/01_control…04_guinier、ifts/、tables/、models/、reports/ 落盘；强调全程调 RAWAPI、不自己写积分/拟合。产物清单：每区间一份 .dat + guinier_multi_range.csv + P(r) + mw.csv + 报告 + workspace。",
+      "notes": "正面场景：本 skill 的教科书式入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "/DataProcess_2026.10.01/data/Tube-SAXS/A5-05-6 这个目录里既有 A5-05-6 的帧又有 ddh2o 的帧，怎么处理？",
+      "expected_behavior": "答：目录即实验记录——前缀 != 样品名（默认取目录名）的那些 run 就是 control；A5-05-x 组夹的是 ddh2o，BSA/5705/877-*/97df 组夹的是 pb7。脚本默认按前缀分类，多前缀用 --control-key。",
+      "notes": "正面场景：control 配对。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "扣减完 Kratky 在高 q 翘起来，IFT 的 chisq 也很大，是不是我 q 区间取错了？",
+      "expected_behavior": "答：高 q 常数残留的典型来源是 control 与样品之间的 1–3% 比例差（透射归一化治不了），用 RAW 的 scaleRelative 在高 q 窗（粒子不散射，默认 0.30–0.44 Å⁻¹）定标；实测 A5-05-1 因子 1.0236 后 auto-Guinier R² 0.873→0.960。附带：窗取太低（0.15–0.25 给 1.09）会把样品信号当背景。IFT chisq 大也可能只是低 q 信噪比高导致误差被低估。",
+      "notes": "正面场景：机制 + 实测数字。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "我想自己判断拟合过程合不合适，能不能把不同数据范围都拟合一遍，最后给个结论？",
+      "expected_behavior": "答：多区间 Guinier——每区间一份 setQrange 截断的 profile 副本 + RAW 的 guinier_fit 结果，表里给 Rg/I0/误差/qRg 上下界/R²/chi2_red/curvature/rg_split_rel 与逐条闸门；脚本只算残差统计不改拟合。不通过时明确写 NOT recommended 并给 Rg 漂移范围（A5-05-1 实测 10.8–19.6 Å）。判据细节转 assess-guinier-fit-quality。",
+      "notes": "正面场景：用户明确的验收条件。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "这批数据出不来珠模，RAW 说找不到 ATSAS，但我在 GUI 里明明看到 DAMMIF 那个选项？",
+      "expected_behavior": "答：GUI 的菜单项永远渲染，RAW 里的 DAMMIF/DAMMIN/GNOM/DATMW/DATCLASS 全是 ATSAS 外壳（包里自带实现的只有 BIFT/DENSS/REGALS）。闸门顺序：showDAMMIFFrame 先判 IFT 必须来自 GNOM（RAW.py:1209 \"Wrong IFT type\"），到 1289 行才判 ATSAS；最快的判定点是 Tools→ATSAS→GNOM。且 DAMMIF 只吃 GNOM 的 .out，BIFT 的 .ift 在 writeOutFile 就断。无 ATSAS 时用 BIFT + DENSS + Vp/Vc。",
+      "notes": "正面场景：ATSAS 边界 + GUI 闸门顺序，用户实际问过。"
+    },
+    {
+      "id": "should-trigger-06",
+      "type": "should_trigger",
+      "prompt": "BIFT 给出的 Dmax 是 400 Å，跟我 Kratky 峰位估的 Rg 完全对不上，怎么回事？",
+      "expected_behavior": "答：BIFT 默认 Dmax 搜索域是 10–400 Å，对 Rg≈17 Å 的样品会交出一个 chisq 几十的假解（Dmax 顶到上限、实空间 Rg 上百）。脚本按 0.7–1.6×3.1·Rg 写进 settings（minDmax/maxDmax/DmaxPoints/PrPoints），收窄后 Dmax≈48 Å、实空间 Rg 18.3 Å 与 Guinier 17.2 Å 对上；要看趋势用 --ift-sweep。",
+      "notes": "正面场景：BIFT 参数域这个坑。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "这条扣减完的曲线，Rg 到底取哪一段？q_max 该到多少才算对？",
+      "expected_behavior": "走 assess-guinier-fit-quality（取点判据），不是流水线 skill。",
+      "notes": "诱饵类型：同一批数据，但问单点判据。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "SEC 这条一千多帧的系列怎么处理？线站只给了 .Iochamber 没有逐帧 txt。",
+      "expected_behavior": "走 run-a-sec-saxs-pipeline-end-to-end（SEC 姐妹 skill：补逐帧 txt、归一化视频、buffer/sample 区）。",
+      "notes": "诱饵类型：端到端但对象是 SEC 连续洗脱。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "这个会话里的 .cfg 到底是不是今天的？定心和掩膜对不对？",
+      "expected_behavior": "走 configure-bioxtas-raw-for-a-dataset（配置核对，用标样峰位验证）。",
+      "notes": "诱饵类型：前置配置核对，不是流水线。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "这个蛋白的分子量该报哪一个数，Vc 还是 Vp？",
+      "expected_behavior": "走 choose-a-molecular-weight-method（方法选择与不确定度），不是流水线。",
+      "notes": "诱饵类型：单点判据。"
+    }
+  ],
+  "blind_test_2026-10-01": {
+    "method": "2 位独立评测者（delegate_task 子代理，互不可见），只给全部候选 skill 的 name + description 前 57 字符（模拟 Hermes 路由截断，agent/skill_utils.py SKILL_PROMPT_DESC_LIMIT），对 12 条 prompt 各选一个 skill",
+    "gold": {
+      "1": "run-a-tube-saxs-pipeline-end-to-end",
+      "2": "run-a-sec-saxs-pipeline-end-to-end",
+      "3": "run-a-tube-saxs-pipeline-end-to-end",
+      "4": "assess-guinier-fit-quality",
+      "5": "organize-batch-saxs-dataset",
+      "6": "run-a-tube-saxs-pipeline-end-to-end",
+      "7": "choose-a-molecular-weight-method",
+      "8": "run-a-tube-saxs-pipeline-end-to-end",
+      "9": "configure-bioxtas-raw-for-a-dataset",
+      "10": "run-a-tube-saxs-pipeline-end-to-end",
+      "11": "evaluate-a-shape-reconstruction",
+      "12": "run-a-sec-saxs-pipeline-end-to-end"
+    },
+    "evaluator_A": {
+      "1": "tube-pipeline",
+      "2": "process-sec-saxs-series",
+      "3": "tube-pipeline",
+      "4": "assess-guinier-fit-quality",
+      "5": "organize-batch-saxs-dataset",
+      "6": "compute-and-validate-p-of-r",
+      "7": "choose-a-molecular-weight-method",
+      "8": "compute-and-validate-p-of-r",
+      "9": "configure-bioxtas-raw-for-a-dataset",
+      "10": "assess-guinier-fit-quality",
+      "11": "evaluate-a-shape-reconstruction",
+      "12": "script-raw-with-the-python-api"
+    },
+    "evaluator_B": {
+      "1": "tube-pipeline",
+      "2": "process-sec-saxs-series",
+      "3": "organize-batch-saxs-dataset",
+      "4": "assess-guinier-fit-quality",
+      "5": "organize-batch-saxs-dataset",
+      "6": "compute-and-validate-p-of-r",
+      "7": "choose-a-molecular-weight-method",
+      "8": "compute-and-validate-p-of-r",
+      "9": "configure-bioxtas-raw-for-a-dataset",
+      "10": "assess-guinier-fit-quality",
+      "11": "evaluate-a-shape-reconstruction",
+      "12": "script-raw-with-the-python-api"
+    },
+    "score_vs_gold": {
+      "A": "6/12",
+      "B": "5/12",
+      "一致错误": [
+        "2",
+        "6",
+        "8",
+        "10",
+        "12"
+      ]
+    },
+    "findings": [
+      "金标本身有 2 条定错：#6（Kratky 高 q 翘起 + IFT chisq 大）与 #8（BIFT 的 Dmax）是判据问题，本 skill 的边界原文就把它们转给 compute-and-validate-p-of-r / assess-guinier-fit-quality——两位评测者一致选了判据 skill，属正确行为，不计为错。修正后的正分 = A 8/12、B 7/12。",
+      "#10（多个数据范围都拟合一遍、给我个结论）是**真漏**：本 skill 的核心产物，但可见头里 '多区间 Guinier' 抢不到 '拟合/范围/结论' 这些词，两位都转给了 assess-guinier-fit-quality。代价 = 多一跳（判据 skill 里没有流水线产物）。已记录，不再调参（该头 57 字已满）。",
+      "#2 与姐妹 skill 自己记录的残留真歧义同一条（'SEC 一千多帧'）：两位都选了 process-sec-saxs-series，而端到端产物在 SEC 流水线 skill 里。",
+      "#12（做个归一化小视频/别落归一化 tif）在 57 字窗口内不可达：视频能力写在 SEC 流水线 skill 的正文，可见头只到 '补出每帧 BL19U2 header txt'。窗口限制，非描述质量问题。",
+      "#3（目录里样品帧 + ddh2o 帧怎么配对/要不要缩放）A 选本 skill、B 选 organize-batch-saxs-dataset：两条都合理（前者管缩放，后者管配对），属多跳可接受。"
+    ]
+  }
+}
