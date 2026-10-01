@@ -38,7 +38,7 @@
 | `run-a-tube-saxs-pipeline-end-to-end` | `4fd536d` | safe | `sha256:8724528379778d13` |
 | `write-saxs-results-readme` | `4fd536d` | safe | `sha256:ab75c5c7bb9c186c` |
 | `embed-a-model-in-bead-and-density-models` | `ac9ad19` | caution | `sha256:d73f8356a2578300` |
-| `compare-model-curve-with-existing-fits` | `8f3fd26` | caution | `sha256:fef50a862f8dfd97` |
+| `compare-model-curve-with-existing-fits` | `17feeba` | caution | `sha256:fef50a862f8dfd97` |
 
 ## 索引
 
@@ -74,6 +74,8 @@ python <write-saxs-results-readme>/scripts/verify-results-folder.py <结果目�
 | 1 | `compare-model-curve-with-existing-fits`，21 个候选，10 条 | **9/10**（正面 5/6 · 诱饵 **4/4**） | **9/10**（正面 **6/6** · 诱饵 **4/4**） | 两条错误都落在与 `fit-a-high-resolution-model-to-data` 的边界上（诱饵 #7「RAW 界面的 pdb 没有 Chi² / 要不要加 harmonics」被抢走；A 另把正面 #2 判给对方）。**试改一版头部（把「理论曲线」换成「命令行」）后诱饵 #7 被抢回、正面却掉 3–4 条（6/10、7/10）→ 回退用首轮头部**；取舍与代价见该 skill 的 `test-results.md` |
 | 2 | 同上，改了头部重测 | 6/10（正面 2/6 · 诱饵 4/4） | 7/10（正面 3/6 · 诱饵 4/4） | 已回退（见上一行处置） |
 | 1（首轮） | `assess-saxs-raw-data-quality`，17 个候选，10 条 | **7/10**（正面 4/6 · 诱饵 **4/4**） | **7/10**（正面 4/6 · 诱饵 **4/4**） | 4 条诱饵 100% 未误收（流水线/Guinier 判据/P(r)/MW 各归各位）；三条一致错误里 #10 认定为**金标偏严**（修订后 8/10 · 8/10），#5（砍 q_min 砍到哪）与 #9（上机前排 control）属**可见窗口放不下** → 按既有口径记代价、不再调参 |
+
+darwin 优化：`compare-model-curve-with-existing-fits` 2026-10-02 走完 9 维基线（84.3）→ 三轮 paired 3-0 keep（dim3 if-then 故障表 / dim4 六道 🔴 STOP 闸门 / dim8 可粘命令+三段式回答，另修一处复审发现的示例不一致）→ 92.7，记录见该 skill 的 `test-results.md` 第 5 节。
 
 细节（含每条错误归因与金标修订理由）见 [`test-results.md`](test-results.md)；
 `embed-a-model-in-bead-and-density-models` 的首轮盲测见 [`skills/embed-a-model-in-bead-and-density-models/test-results.md`](skills/embed-a-model-in-bead-and-density-models/test-results.md)。
