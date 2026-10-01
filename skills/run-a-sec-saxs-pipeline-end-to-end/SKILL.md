@@ -1,7 +1,7 @@
 ---
 name: run-a-sec-saxs-pipeline-end-to-end
-description: "端到端跑一条 SEC-SAXS 系列（图像→报告，全程 RAW）：先认洗脱峰，≥2 个峰就逐峰建子目录、各用本峰的 buffer 与峰窗分别扣减分析（RAW 只认最大那个峰，原流程会静默丢掉别的峰）；逐帧归一化（补 BL19U2 header txt / 读线站已有 txt）、裁剪区归一化视频、多区间 Guinier、IFT、分子量、DAMMIF/DENSS 形状重建，每个节点落 .dat + 表格 + 图 + RAW PDF 报告 + 结果 README。用于「把这条 SEC-SAXS 数据端到端跑一遍」「这条系列有两个洗脱峰、怎么分别分析」「一千多帧怎么变成曲线和报告」；不负责单点判据（Guinier 取点→assess-guinier-fit-quality，P(r)/Dmax→compute-and-validate-p-of-r，MW 方法选择→choose-a-molecular-weight-method，重建评估→evaluate-a-shape-reconstruction，未解析重叠峰分解→deconvolve-overlapping-elution-peaks）。"
-version: 1.1.0
+description: "端到端跑一条 SEC-SAXS 系列：多峰逐峰分析、逐帧归一化、裁剪区视频、多区间 Guinier 表、IFT、分子量、DAMMIF/DENSS 形状重建（图像→报告全程 RAW；无逐帧 txt 时补 BL19U2 header txt），每个节点落 .dat + 表格 + 图 + RAW PDF 报告 + 结果 README。用于「把这条 SEC-SAXS 数据端到端跑一遍」「这条系列有两个洗脱峰、怎么分别分析」「一千多帧怎么变成曲线和报告」「归一化视频怎么做」；不负责单点判据（Guinier 取点→assess-guinier-fit-quality，P(r)/Dmax→compute-and-validate-p-of-r，MW 方法选择→choose-a-molecular-weight-method，重建评估→evaluate-a-shape-reconstruction，未解析重叠峰分解→deconvolve-overlapping-elution-peaks）。"
+version: 1.2.0
 author: hermes
 license: MIT
 tags: [saxs, sec-saxs, bioxtas-raw, pipeline, normalization, bl19u2, video, guinier, ift, dammif, denss, multi-peak, peak-detection]

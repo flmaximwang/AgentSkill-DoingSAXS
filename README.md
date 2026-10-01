@@ -101,12 +101,16 @@ python <write-saxs-results-readme>/scripts/verify-results-folder.py <结果目�
 | 1（首轮） | `write-saxs-results-readme`，13 个候选，9 条 | **9/9**（正面 **5/5** · 诱饵 **4/4**） | **9/9**（正面 **5/5** · 诱饵 **4/4**） | 两评测者**逐题完全一致、零错误**：两条最像的诱饵（#9 也是「写 README」但属批处理根目录 → `result-folder-readme`；#8 README 里也写 NSD 但判据归 `evaluate-a-shape-reconstruction`）都没被误收；无事可调，按既有口径记录即止 |
 | 2 | 同上，改了头部重测 | 6/10（正面 2/6 · 诱饵 4/4） | 7/10（正面 3/6 · 诱饵 4/4） | 已回退（见上一行处置） |
 | 1（首轮） | `assess-saxs-raw-data-quality`，17 个候选，10 条 | **7/10**（正面 4/6 · 诱饵 **4/4**） | **7/10**（正面 4/6 · 诱饵 **4/4**） | 4 条诱饵 100% 未误收（流水线/Guinier 判据/P(r)/MW 各归各位）；三条一致错误里 #10 认定为**金标偏严**（修订后 8/10 · 8/10），#5（砍 q_min 砍到哪）与 #9（上机前排 control）属**可见窗口放不下** → 按既有口径记代价、不再调参 |
+| 1 | `run-a-sec-saxs-pipeline-end-to-end`（**多峰改造后**，21 个候选，9 条） | 6/9（正面 2/5 · 诱饵 **4/4**） | 6/9（正面 2/5 · 诱饵 **4/4**） | 新功能题 #6（两个洗脱峰各要一套）与新增诱饵 #7（未解析重叠峰）**两票都对**；但新头部把「逐帧归一化」挤出了 57 字符窗口 → 正面 #3（逐帧归一化）、#8（视频）两票丢给兄弟 skill → **改头重测** |
+| 2 | 同上，头部改为「（图像→报告）：多峰逐峰分析、逐帧归一化（BL19U2 header txt）」 | **8/9**（正面 4/5 · 诱饵 **4/4**） | 6/9（正面 2/5 · 诱饵 **4/4**） | #3、#8 在 A 侧修回，但两评测者出现 2 处分歧（不稳定）、#5 两票仍丢 → 再试一版把 Guinier/视频也塞进窗口 |
+| 3（定稿） | 同上，头部改为「端到端跑一条 SEC-SAXS 系列：多峰逐峰分析、逐帧归一化、裁剪区视频、多区间 Guinier 表、IFT、分」 | **7/9**（正面 3/5 · 诱饵 **4/4**） | **7/9**（正面 3/5 · 诱饵 **4/4**） | 与第 2 轮同分（14/18）但**两评测者 9 题逐题完全一致**（可复现优先）；六类钩子都在窗口内；两条漏判（#3、#5）都落给**最像的兄弟 skill**（判据版有权接这两问）；**诱饵 3 轮×2 评测者 24/24 全对**（零误召）→ 按「两三轮即停」定稿，取舍与代价见该 skill 的 `test-results.md` |
 
 darwin 优化：`compare-model-curve-with-existing-fits` 2026-10-02 走完 9 维基线（84.3）→ 三轮 paired 3-0 keep（dim3 if-then 故障表 / dim4 六道 🔴 STOP 闸门 / dim8 可粘命令+三段式回答，另修一处复审发现的示例不一致）→ 92.7，记录见该 skill 的 `test-results.md` 第 5 节。
 
 细节（含每条错误归因与金标修订理由）见 [`test-results.md`](test-results.md)；
 `embed-a-model-in-bead-and-density-models` 的首轮盲测见 [`skills/embed-a-model-in-bead-and-density-models/test-results.md`](skills/embed-a-model-in-bead-and-density-models/test-results.md)。
 `write-saxs-results-readme` 的首轮盲测（含 13 个候选的截断文本与逐题判定）见 [`skills/write-saxs-results-readme/test-results.md`](skills/write-saxs-results-readme/test-results.md)。
+`run-a-sec-saxs-pipeline-end-to-end` 的多峰改造（含 4 次真实数据实跑 + 三轮盲测逐题矩阵）见 [`skills/run-a-sec-saxs-pipeline-end-to-end/test-results.md`](skills/run-a-sec-saxs-pipeline-end-to-end/test-results.md)。
 
 ## 安装（三段式标识符，按仓库内路径，不需要 tap；`--category` 只决定落点）
 
