@@ -1,0 +1,76 @@
+{
+  "skill": "compare-model-curve-with-existing-fits",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "我有扣减好的 sample_avg.dat 和 4DH2-676-apo-dimer.cif，想算条理论曲线拟合一下，看这个结构配不配这条曲线。",
+      "expected_behavior": "走 CRYSOL 命令行：crysol --constant 模型.cif 曲线.dat（默认加常数扣减、--lm 20）→ 读 <模型>.fit 第 1 行的 Chi^2 与 .log 里的 Chi-square of fit；强调这是「生成即拟合」（不带 .dat 只有 minimal 曲线、没有 χ²），并要求给出判档（相容/不相容）而不是「看起来差不多」。",
+      "notes": "正面场景：主入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "processed 里已经有 DENSS 和四个 DAMMIF 的结果，我想知道这个高分辨模型是不是比这些从头算重建更贴数据。",
+      "expected_behavior": "用同一批数据把 model 曲线与已有拟合放在一起比：datcmp 对每个 .fit/.fir/.out 单文件重算 red.χ²（统一口径），说明各家自报的 χ² 分母/网格/误差列不同（DENSS 2.665 vs datcmp 2.668；DAMMIF 重采样成 1149 点网格）→ 只按 datcmp 列排序；产出叠加图 + 残差 + 明细表 + 判档。",
+      "notes": "正面场景：与已有拟合的同口径比较（本 skill 的差异化能力）。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "crysol 命令行怎么跑？--constant 要不要加、--lm 给多少、smax 要不要动？",
+      "expected_behavior": "按手册给参数与默认值：--lm 默认 20（上限 100，细长物体加大、smax 调大时必须跟着调大）；--smax 默认 0.5 Å⁻¹（上限 2.0）；--constant 是常数扣减、吸收缓冲液失配（本机实测同一模型 4.233 → 1.267）；并说明打开最小化时溶剂密度/水化层对比度是拟合参数，要手改得先 --skip-minimization。",
+      "notes": "正面场景：参数怎么给。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "同一个拟合，RAW 里显示 2.66、ATSAS 日志里 2.67、我自己按公式算是 4.4，到底信哪个？",
+      "expected_behavior": "解释三个口径：程序自报（DENSS 除以 N、crysol/DAMMIF 除以 N−1，实测同一文件 2.665/4.233/4.334）、datcmp 从同一文件重算（统一口径，DENSS 那份变 2.668，判决用这列）、把重采样过的曲线插回原始网格会虚高（DENSS 845 点 → 4.40）。结论：跨程序比只能用 datcmp 列。",
+      "notes": "正面场景：口径差异（本 skill 的核心知识点）。"
+    },
+    {
+      "id": "should-trigger-05",
+      "type": "should_trigger",
+      "prompt": "datcmp 怎么用在 .fit/.fir/.out 上？我喂了个普通 .dat，它给 χ²=0、p=1，这是完美拟合吗？",
+      "expected_behavior": "答：不是。datcmp 只认 .fit/.fir/.out；给普通 .dat 时它把同一文件当两个数据集自比，给出 χ²=0/p=1 的假「完美拟合」；给 BIFT 的 .ift 则返回哨兵 −1。判据：χ²≤0 或 (χ²=0 且 p=1) = 该文件不可判。并给单文件时的正确用法（.fit/.fir = 文件里的实验数据 vs 模型拟合；.out = p(r) 重建 vs 实验数据）与 α=0.01 的判读。",
+      "notes": "正面场景：工具用法 + 实测坑。"
+    },
+    {
+      "id": "should-trigger-06",
+      "type": "should_trigger",
+      "prompt": "我把 4LI2 的四条链拆成了四个 cif，想知道哪条链跟这条曲线最贴。",
+      "expected_behavior": "多模型一次比较：每个模型各跑一次 crysol（产物目录分开、避免同名覆盖）、全部用同一组参数（同一次运行才算可比），比 datcmp red.χ² 与模型 Rg；提醒只有水的链会报 No such model or chain in structure；链条间差异小时（实测 2.32/2.48/2.67）不能据此判「哪条正确」，要结合化学计量与界面证据。",
+      "notes": "正面场景：多模型排序。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "我在 RAW 里 Plot 了一个 pdb，出了一条曲线但没有 Chi²，低 q 还差很多，是不是该加 harmonics？",
+      "expected_behavior": "应路由到 fit-a-high-resolution-model-to-data：那是 RAW 界面里的判据（minimal 曲线 vs 加了数据的拟合、默认计算器、harmonics/N samples 的症状—处方）。本 skill 是命令行产物 + 与已有拟合同口径比较，不做界面里的取舍。",
+      "notes": "诱饵：同样「模型 vs SAXS」，但问的是 RAW 界面的判据与参数处方。"
+    },
+    {
+      "id": "should-not-trigger-02",
+      "type": "should_not_trigger",
+      "prompt": "把 A5.pdb 嵌到珠模型和 DENSS 电子云里，CIFSUP 的 NSD 0.87 算叠得好吗？",
+      "expected_behavior": "应路由到 embed-a-model-in-bead-and-density-models（刚体叠合、NSD 写在输出文件里、fitmap 要 resolution/search+seed）。叠得好不等于配得上数据，判「配不配」才轮到本 skill。",
+      "notes": "诱饵：同样出现 A5.pdb + 珠模型/电子云，但问的是叠合分数。"
+    },
+    {
+      "id": "should-not-trigger-03",
+      "type": "should_not_trigger",
+      "prompt": "我这个样品跑了 15 个 DAMMIF 模型，分成 3 个簇、平均 NSD 0.89，重建还能用吗？",
+      "expected_behavior": "应路由到 evaluate-a-shape-reconstruction（a-score/平均 NSD/簇数/χ²/Rg·Dmax/MW 等判据）。本 skill 只把已有拟合拿来当对照，不评重建本身。",
+      "notes": "诱饵：同样的 DAMMIF/χ² 字样，但问的是重建质量。"
+    },
+    {
+      "id": "should-not-trigger-04",
+      "type": "should_not_trigger",
+      "prompt": "帮我把这批管式原始帧一路跑到 Rg/P(r)/MW/DENSS 并出一份 README。",
+      "expected_behavior": "应路由到 run-a-tube-saxs-pipeline-end-to-end（SEC 连续洗脱帧则去 run-a-sec-saxs-pipeline-end-to-end）。本 skill 只消费那条流水线的产物，不重跑积分/扣减/Guinier/IFT。",
+      "notes": "诱饵：上游端到端流水线。"
+    }
+  ]
+}
