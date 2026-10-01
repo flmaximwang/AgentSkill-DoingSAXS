@@ -335,7 +335,7 @@ def step_guinier(sample_profile, st, out, args):
 def write_ift_summary(out, rows):
     with open(os.path.join(out, "tables", "ift_summary.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["method", "dmax", "rg", "chi_sq", "log_alpha", "evidence"])
+        w.writerow(["method", "dmax", "dmax_err", "rg", "rg_err", "chi_sq", "log_alpha", "evidence"])
         w.writerows(rows)
 
 
@@ -347,7 +347,10 @@ def step_ift(sample_profile, st, out, prefix, atsas_dir, ift_dmax=None):
         ift = b[0]
         raw.save_ift(ift, f"{prefix}_bift.ift", os.path.join(out, "ifts"))
         ifts.append(ift)
-        rows.append(("BIFT", float(b[1]), float(b[2]), float(b[7]), float(b[8]), float(b[10])))
+        # bift 返回顺序：0 ift / 1 dmax / 2 rg / 3 i0 / 4 dmax_err / 5 rg_err / 6 i0_err /
+        #                7 chi_sq / 8 log_alpha / 9 ld_err / 10 evidence / 11 evidence_err
+        rows.append(("BIFT", float(b[1]), float(b[4]), float(b[2]), float(b[5]),
+                     float(b[7]), float(b[8]), float(b[10])))
         log(f"BIFT : Dmax={b[1]:.1f} A  Rg={b[2]:.2f} A  chi²={b[7]:.1f}  log_alpha={b[8]:.2f}  evidence={b[10]:.1f}")
     except Exception as exc:
         log(f"  ！BIFT 失败：{type(exc).__name__}: {exc}")
@@ -363,7 +366,8 @@ def step_ift(sample_profile, st, out, prefix, atsas_dir, ift_dmax=None):
             denss_ift_obj = d[0]
             raw.save_ift(denss_ift_obj, f"{prefix}_denss_ift.ift", os.path.join(out, "ifts"))
             ifts.append(denss_ift_obj)
-            rows.append(("DIFT", float(d[1]), float(d[2]), float(d[6]), float('nan'), float('nan')))
+            rows.append(("DIFT", float(d[1]), float('nan'), float(d[2]), float(d[4]),
+                         float(d[6]), float('nan'), float('nan')))
             log(f"DIFT : Dmax={d[1]:.1f} A（显式）Rg={d[2]:.2f} A chi²={d[6]:.2f} alpha={d[7]:.2f} → 给 DENSS 用")
         except Exception as exc:
             log(f"  ！DIFT 失败：{type(exc).__name__}: {exc}")
@@ -379,8 +383,10 @@ def step_ift(sample_profile, st, out, prefix, atsas_dir, ift_dmax=None):
             g = raw.gnom(sample_profile, dmax)
             gnom_ift = g[0]
             raw.save_ift(gnom_ift, f"{prefix}_gnom.out", os.path.join(out, "ifts"))
-            rows.append(("GNOM", float(dmax), float(g[1] if len(g) > 1 else np.nan), float('nan'), float('nan'), float('nan')))
-            log(f"GNOM : Dmax={dmax:.1f} A  → {prefix}_gnom.out")
+            # gnom 返回顺序：0 ift / 1 dmax / 2 rg / 3 i0 / 4 rg_err / 5 i0_err / 6 chi_sq / ...
+            rows.append(("GNOM", float(dmax), float('nan'), float(g[2]), float(g[4]),
+                         float(g[6]), float('nan'), float('nan')))
+            log(f"GNOM : Dmax={dmax:.1f} A  Rg={g[2]:.2f}±{g[4]:.2f} A  chi²={g[6]:.2f}  → {prefix}_gnom.out")
             ifts = ifts + [gnom_ift]
             ift = gnom_ift
             write_ift_summary(out, rows)      # 别在 early return 前漏掉这张表
@@ -407,13 +413,14 @@ def step_mw(sample_profile, st, out, ift, atsas_dir):
     for name, fn in (("Bayesian", raw.mw_bayes), ("Datclass", raw.mw_datclass)):
         try:
             res = fn(sample_profile, atsas_dir=atsas_dir)
-            rows.append((name, *[float(x) if isinstance(x, (int, float, np.floating)) else str(x) for x in res[:3]]))
+            rows.append((name, *[float(x) if isinstance(x, (int, float, np.floating)) else str(x)
+                                 for x in res[:5]]))   # mw + 最多 4 个 detail（Bayes 的 CI 就在里面）
             log(f"MW {name}: {res[0]:.1f} kDa")
         except Exception as exc:
             log(f"  ！MW {name} 跳过（需 ATSAS）：{type(exc).__name__}: {exc}")
     with open(os.path.join(out, "tables", "mw.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["method", "mw", "detail1", "detail2", "detail3"])
+        w.writerow(["method", "mw", "detail1", "detail2", "detail3", "detail4"])
         w.writerows(rows)
     return rows
 
