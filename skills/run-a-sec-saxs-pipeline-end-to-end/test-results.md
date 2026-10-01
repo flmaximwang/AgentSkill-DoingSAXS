@@ -180,3 +180,34 @@ dim8 用**真跑对照**打分：两个独立子代理，一个带 SKILL.md 一�
 
 **中断原因**：HL-4 —— 第 2、3 轮 judge 多数判 `slight`，停止加轮，避免为了凑分增冗余。
 账本：`~/.hermes/skills/agent-evolution/darwin-skill/results.tsv`（本 skill 共 5 行：baseline / fact_fix / dim3 / dim4 / dim7-revert / post）。
+
+---
+
+## 6. 第 4 轮路由盲测（darwin 之后重测，2026-10-02）
+
+题集扩到 **10 条**（前 9 条不变 + 新增 `should-trigger-06`「拿峰内不同位置当稀释序列、看 Rg 随浓度变不变、外推零浓度」），
+候选仍 21 个、仍只暴露 description 前 57 字符、两位独立评测者。
+
+**A 9/10（正面 5/6 · 诱饵 4/4）· B 7/10（正面 3/6 · 诱饵 4/4）**（上轮 9 条时 14/18）。
+
+| # | 题 | 金标 | A | B |
+|---|---|---|---|---|
+| 1 | SEC 端到端跑一遍 | 本 skill | ✓ | ✓ |
+| 2 | Rg 取哪一段 / q_max | assess-guinier-fit-quality | ✓ | ✓ |
+| 3 | 只有监视器+日志，怎么在 RAW 里逐帧归一化 | 本 skill | **✓（理由直接引用新增的 STOP 1 闸门）** | ✗ → process-sec-saxs-series |
+| 4 | 基线该用 Linear 还是 Integral | correct-sec-saxs-baseline | ✓ | ✓ |
+| 5 | 想自己判断拟合合不合适、多范围都拟合一遍 | 本 skill | ✗ → run-a-tube-saxs-pipeline-end-to-end | ✗ → assess-guinier-fit-quality |
+| 6 | 两个洗脱峰各要一套完整结果 | 本 skill | ✓ | ✓ |
+| 7 | 谷底没回基线的两峰怎么拆 | deconvolve-overlapping-elution-peaks | ✓ | ✓ |
+| 8 | 看束斑漂移做视频、别落归一化 tif | 本 skill | ✓ | ✓ |
+| 9 | 珠模被剃、平均 NSD 0.8 算好吗 | evaluate-a-shape-reconstruction | ✓ | ✓ |
+| 10 | **峰内不同位置当稀释序列、外推零浓度**（新增） | 本 skill | **✓** | ✗ → analyze-time-resolved-series |
+
+**读法**：
+
+- 新增能力题 #10 至少一票命中（A 的理由落在「峰内梯度节点 + c→0 外推 + Rg vs c 判读」）→ 该能力**可被发现**；
+  B 判给 `analyze-time-resolved-series`（「多序列一起处理」这个词面撞车），属同族抢词。
+- **意外收获**：darwin 加的 **STOP 1 闸门**（把三种 txt 来源列清、并要求"都没有时先问用户"）让 A 把 #3 路由对了，
+  而这条在前三轮两票全丢给 `process-sec-saxs-series` —— 写清**触发条件**也能改善路由，不只改善执行。
+- 留在原地的 #5：A 判给管式流水线（它的描述里就有「多区间 Guinier→BIFT」）、B 判给 Guinier 判据 skill。
+  这一问本身没说 SEC、且"多区间拟合"确实被两条流水线共同宣称 → 记为**合理歧义**，不改头部（否则会伤 #1/#6/#8）。
