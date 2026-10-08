@@ -67,9 +67,13 @@ MW 方法选择 → `choose-a-molecular-weight-method`；重建结果评估 → 
 `877-apo-pb7` 里的 "pb7" 是缓冲液后缀，不是背景）；前缀不一致时用 `--sample-key` / `--control-key` 手工指定。
 目录还没归类（一堆 series 平铺在一个目录里）时，先走 `organize-batch-saxs-dataset` 拆成"每样品一个文件夹 + 夹着它的背景"。
 
-**产物落点约定（本项目）**：原始帧在 `<项目>/data/<模式>/<样品>/`，结果放**同级的** `<项目>/processed/<模式>/<样品>/`
-（本机实测结构：`DataProcess_2026.10.01/{data,processed}/{Tube-SAXS,SEC-SAXS}/<样品>/`）。
+**产物落点约定（本项目）**：原始帧在 `<项目>/data/<模式>/<样品>/`（线站逐帧 `.txt` 与 `.tif` 并排），
+结果放**同级的** `<项目>/processed/<模式>/<样品>/`（本机实测结构：
+`DataProcess_2026.10.01/{data,processed}/{Tube-SAXS,SEC-SAXS}/<样品>/`）。
 `--out-dir` 指到 `processed/<模式>/<样品>`，整批跑时再在其上一层做 `_summary/` 与 `_logs/`。
+本机项目路径 = `/Users/maxim/Repositories/DataProcess_2026.10.01/`（**不是 git 仓库** —— 没有版本可回滚，
+交付全靠目录里的 README 与表）；cfg 在 `data/*.cfg`；跑流水线用 `/Applications/BioXTASRAW/bin/python`，
+ATSAS 在 `/Applications/ATSAS-4.1.4-1/bin`；embed 类产物在**同级** `processed/SEC-SAXS/_embed/<样品>/`。
 
 ## 核心机制（四条，都是实测撞出来的）
 
@@ -178,6 +182,10 @@ python summarize-tube-run.py "$PRO"        # → $PRO/README.md（整批说明�
 python plot-tube-overview.py "$PRO"        # → $PRO/_summary/overview.png
 ```
 
+- **整批要能续跑、分小块**：回合中途的消息会杀后台进程，terminal 也**拒收** `nohup`/`setsid`/`disown`
+  —— 别指望后台常驻；每跑完一个（或几个）样品就落盘，中断后从已有的 `processed/<模式>/<样品>/` 接着跑。
+  输出目录若出现你没写过的 `_prev_*`，说明别的会话刚重排过 → 先让路问用户（见「并发/共享目录相关的坑」）。
+
 `summarize-tube-run.py` 只读各目录已产出的 `summary.json` / `tables/*.json` / `tables/*.csv`，
 一行一个样品（31 列：control 缩放因子、contrast、auto-Guinier 的 I0/Rg/q/R²、推荐区间与四条闸门、
 区间 Rg 跨度、IFT 两次的 Dmax/Rg_real/chisq/是否可信、MW Vp·Vc、DENSS 的 chi²/Rg_model/体积），
@@ -240,6 +248,22 @@ python plot-tube-overview.py "$PRO"        # → $PRO/_summary/overview.png
   读取方按位置读所以两种都能吃）。
 - **稀释序列不要只看最稀那条**：本机 A5-05-1…6 是 2 倍稀释序列（I0 65.5/35.8/20.2/10.9/5.3/2.4），
   最稀的一条低 q 信噪比最差、区间选择最不稳；判 Rg 要沿序列看一致性。
+
+### 并发/共享目录相关的坑（都是实测撞出来的）
+
+**同一批数据会有多个会话同时处理；共享的结果目录会被别人重排 —— 这份仓库最贵的教训。**
+
+- **别的会话会归档/重排共享的结果目录**（本机实例：`processed/Tube-SAXS/<样品>/` → `_prev_20261001/`）：
+  正在跑的批处理输出目录被搬走，下一次落盘就 `FileNotFoundError` —— **看着像代码 bug，其实是目录没了**。
+  判据：**输出目录里出现你没写过的 `_prev_*`（或整体换成了新布局）= 别的会话刚重排过 → 让路、问用户，
+  别开自己的并行跑**。
+- **同一个脚本会被别的会话同时编辑**（本机实测吃到过一次 `NameError`）→ **长跑前把脚本 `cp` 到
+  `~/.hermes/cache/scratch` 冻结成副本再跑**，报告里写明用的哪个 sha。
+- **长批处理必须"可续跑 + 分块"**：回合中途的消息会杀后台进程，terminal **拒收** `nohup`/`setsid`/`disown`
+  （`&` 同理）—— Step 2 那个整批 `for` 循环要能中断后续跑，别指望后台常驻。
+- **改这份 skill 仓库时也并发**：`AgentSkill-DoingSAXS` 常有别的会话同时 push `main` → 动手前 `git fetch`，
+  用自己的 worktree 分支 commit → `git rebase origin/main` → ff-merge 再 push；只按 pathspec `git add`，
+  **绝不** `git add -A` / `git commit -am`。
 
 ## 相关 skills
 

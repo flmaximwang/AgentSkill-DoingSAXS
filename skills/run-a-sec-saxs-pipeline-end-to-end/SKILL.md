@@ -59,6 +59,23 @@ metadata:
 - **监视器开头有几行 `~1e-13` 的野值**（未开束流），正常值是 **`2.6e-08`** 量级；这些行必须丢掉，
   否则窗口落进这段的帧因子会爆掉。
 
+**本机数据仓库与已下机样品（BL19U2 / `DataProcess_2026.10.01`）**：SEC 原始帧在
+`/Users/maxim/Repositories/DataProcess_2026.10.01/data/SEC-SAXS/<样品>/`（本机已有
+`{bsa, bsa_norm_ionchamber, 4LI2-676}` 三个样品目录），产物落**同级**的 `processed/SEC-SAXS/<样品>/`。
+该目录**不是 git 仓库**（没有版本可回滚 —— 交付全靠目录里的 README 与表），cfg 在 `data/*.cfg`，
+跑流水线用 `/Applications/BioXTASRAW/bin/python`，ATSAS 在 `/Applications/ATSAS-4.1.4-1/bin`；
+embed 类产物放在**同级**的 `processed/SEC-SAXS/_embed/<样品>/`。
+
+两条已下机样品的现实（先按 STOP 1 数一遍帧数与配套，再决定走哪条路）：
+
+- **`bsa`**：2000 帧 + `bsa_1.Iochamber` + `bsa_00001.log` → **可逐帧归一化**（Step 1b）；峰≈第 **700** 帧，
+  而且峰**骑在 +40% 的束位漂移**上 → 先按 STOP 3 定 `--baseline linear/integral` 或换 buffer 段，再谈 Rg。
+- **`bsa_norm_ionchamber`**：`bsa` 的监视器归一化对照目录。
+- **`4LI2-676`**：一批 **1464 帧、只有 tif**（无 `.Iochamber`/`.log`/逐帧 `.txt`）→ **做不了通量归一化**，
+  只能 `--no-header-normalization` 跑（README 必须写明未归一化）；峰≈第 **900** 帧；
+  **Rg≈15–16 Å 的小蛋白，低 q 必须裁**（`--trim-qmin`），否则 IFT 的 Dmax 会离谱、DENSS 直接塌陷。
+  同名样品本机也见过 **1800 帧带逐帧 txt** 的批次（见「多峰 7」锚点表）—— **同名两批很常见，动手前先数帧数**。
+
 ## 核心机制：RAW 自己就会用逐帧 txt 归一化（别自己写）
 
 1. RAW 的 header 格式清单里就有 **`BL19U2, SSRF`**（`SASFileIO.py:909` `parseBL19U2HeaderFile`），
@@ -549,6 +566,24 @@ c 范围不够）；峰内有明显肩/双组分（那先分峰或去卷积，�
   回 `frame-sequence-to-video` 的"用已接受的旧帧算相关系数"重标法。
 - **ffmpeg 的 libx264 + yuv420p 要求偶数边长**：61×71 的裁块靠整数放大（8×）顺带解决。
 - 视频的 `-pix_fmt rgb24` 必须与写进管道的字节一致（写 RGB 就声明 rgb24），否则帧数会变 3 倍。
+
+### 并发/共享目录相关的坑（都是实测撞出来的）
+
+**同一批数据会有多个会话同时处理；共享的结果目录会被别人重排 —— 这份仓库最贵的教训。**
+
+- **别的会话会归档/重排共享的结果目录**（本机实例：`processed/Tube-SAXS/<样品>/` → `_prev_20261001/`）：
+  正在跑的批处理输出目录被搬走，下一次落盘就 `FileNotFoundError` —— **看着像代码 bug，其实是目录没了**。
+  判据：**输出目录里出现你没写过的 `_prev_*`（或整体换成了新布局）= 别的会话刚重排过 → 让路、问用户，
+  别开自己的并行跑**。
+- **同一个脚本会被别的会话同时编辑**，你会读到编辑中间态（本机实测因此吃到一次 `NameError`；另一次是
+  `step_ift` 改成返回 5 值、`main` 还按 4 解）→ **长跑前把脚本 `cp` 到 `~/.hermes/cache/scratch` 冻结成副本，
+  跑副本、报告里写明用的哪个 sha**（见「出问题时怎么办」第 14 条）。
+- **长批处理必须"可续跑 + 分块"**：本机回合中途的消息会杀掉后台进程，而且 terminal **拒收**
+  `nohup`/`setsid`/`disown`（`&` 同理）—— 不要指望后台常驻。把一批拆成几小块、每小块落盘可续，
+  中断后从已有产物接着跑。
+- **改这份 skill 仓库时也并发**：`AgentSkill-DoingSAXS` 常有别的会话同时 push `main` → 动手前 `git fetch`，
+  用**自己的 worktree 分支 commit** → `git rebase origin/main` → ff-merge 再 push；只按 pathspec `git add`
+  自己动过的文件，**绝不** `git add -A` / `git commit -am`。
 
 ### 多峰相关的坑（都是实测撞出来的）
 

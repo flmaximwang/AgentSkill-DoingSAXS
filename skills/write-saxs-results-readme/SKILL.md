@@ -55,6 +55,21 @@ metadata:
 
 完整的逐项说明与「章节规范」见 `references/results-folder-contract.md`。
 
+### 本机项目里的落点（BL19U2 / DataProcess_2026.10.01）
+
+产物根不是随便一个目录，本机固定是
+`/Users/maxim/Repositories/DataProcess_2026.10.01/processed/<模式>/<样品>/`（**该仓库不是 git 仓库** ——
+别再往上一层 `git status`，也没有版本可回滚；这个结果目录的"可追溯"全靠本 skill 写的 README 与表）：
+
+- `data/<模式>/<样品>/` 放**原始帧**（线站逐帧 `.txt` 与 `.tif` 并排），`data/*.cfg` 是当天的 BL19U2 配置；
+- `processed/<模式>/<样品>/` 放**结果**：`profiles/01_integrated|02_buffer|03_subtracted|04_sample`、
+  `tables/ift_summary.csv`、`models/`、`reports/`、`video/`，以及本 skill 写的 **`README.md`**；
+- **embed 类产物在"同级"的 `processed/SEC-SAXS/_embed/<样品>/`**（不塞进样品目录里）；
+- 本机解释器 `/Applications/BioXTASRAW/bin/python`，ATSAS 在 `/Applications/ATSAS-4.1.4-1/bin`。
+
+「一个结果目录」= 上面那个 `processed/<模式>/<样品>/`；`_embed/`、`_summary/`、`_logs/` 都是**它的兄弟**目录，
+不在本 skill 契约的 must/should 清单里。
+
 ## 8 节模板（两种模式**必须一样、顺序一样**）
 
 | 节 | 内容 | 两种模式的差别 |
