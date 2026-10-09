@@ -26,8 +26,8 @@
     {
       "id": "should-trigger-04",
       "type": "should_trigger",
-      "prompt": "目标目录里已经有一个叫 bsa 的旧实验文件夹，我这次要建 BSA，会怎么样？",
-      "expected_behavior": "答：macOS APFS / Windows 上 makedirs 不报错、isdir 把大小写不同判成同一目录 → 会静默并进已存在的旧实验。规则：创建前把目标目录条目 casefold() 比较，命中就停下要用户裁决；脚本内建折叠闸（命中返回 3）。",
+      "prompt": "我这批下机数据的归类目标目录里，已经躺着一个旧的叫 bsa 的样品文件夹了，这次要建的是 BSA，会不会两批混到一起？",
+      "expected_behavior": "指出同类异名（casefold 相同）的闸：先把目标目录扫一遍，发现 `bsa` 与要建的 `BSA` casefold 相同 → 报冲突让人决定，不静默并入；顺带提 sha256 判重与「背景复制进最近样品」的落单规则。",
       "notes": "正面场景：大小写折叠闸（静默合并）。"
     },
     {

@@ -7,6 +7,8 @@ description: "下机 batch 数据按样品归类：识别样品/背景，背景�
 
 这条任务只做一件事：**把平铺在一个目录里的几十个 series 拆成"一个样品一个文件夹"，并让每个文件夹恰好含"该样品 + 前后两个背景"**。它是还原流水线的第 0 步——不先归类，后面"选出某个样品的 20 帧"就没有可靠依据。
 
+**边界**：同一 series 目录里混着样品帧与背景帧、要切分后喂给流水线 → `run-a-tube-saxs-pipeline-end-to-end`（本技能只管"把平铺的 series 拆成每样品一文件夹"这一层）。
+
 ## When to Use（什么时候用）
 
 - 线站 batch 模式刚下机：一个目录里平铺着十几个到几十个 series。
@@ -80,7 +82,7 @@ description: "下机 batch 数据按样品归类：识别样品/背景，背景�
 
 ```
 organize-batch-saxs-dataset/
-├── SKILL.md  (91 lines)
+├── SKILL.md  (93 lines)
 ├── test-prompts.json  (41 lines)
 ├── references/
 │   └── organize-batch-saxs-dataset-batch-dataset-grouping.md  (67 lines)
