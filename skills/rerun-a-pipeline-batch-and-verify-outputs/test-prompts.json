@@ -1,0 +1,41 @@
+{
+  "skill": "rerun-a-pipeline-batch-and-verify-outputs",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "我把流水线脚本更新了，帮我把 DataProcess 里的结果都重跑一遍。",
+      "expected_behavior": "走 rerun-a-pipeline-batch-and-verify-outputs：先核「投递有没有被换过」（逐样品四件套：帧数/监视器/日志/逐帧 txt，帧数变多或监视器从无到有 = 旧质量判定全部作废并落文件）与「跑的是不是更新后的脚本」（读 .hub/lock.json 的 identifier，diff -rq 逐字节比，更新完回读 source_revision==HEAD），再按「数据目录全部样品」定范围、旧结果先 mv 到 _prev_<日期>。",
+      "notes": "正面场景：本 skill 的主入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "这批重跑完看着都退 0 了，但总感觉有几个样品不对劲，怎么知道哪个样品/哪个节点失败了？",
+      "expected_behavior": "答：exit 0 ≠ 成功——内部节点失败多数只写日志、退出码仍 0。逐日志 grep 失败标记（failed|失败|not written|Traceback），把「失败样品 + 失败节点 + 原始报错行」列汇报；再逐样品核对该有的节点目录与 README 齐不齐（缺了就是生成器崩了）。",
+      "notes": "正面场景：exit 0 假成功的核对。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "数据目录里新加了一个样品，只有它没结果，其它都有，是不是补跑它就行？汇总要不要重跑？",
+      "expected_behavior": "答：重跑范围 = 数据目录全部样品（不是「已有结果的」）；列数据/结果两遍分三类（补跑/问用户留删/重跑），数样品用代码不靠眼睛。补跑单样品后收尾脚本（summarize/plot）是独立一步必须显式再跑——汇总停在上一次的盘面时样品数与数字都对不上。",
+      "notes": "正面场景：补跑与收尾脚本。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "产物丢了要重生，代码在我们自己的仓库里，是改原驱动还是新写一个 redo 脚本？",
+      "expected_behavior": "答：改原驱动，不另起 redo-*.py 旁路（侧脚本与主流程分叉）。四处必查：删开场 rmtree、完成判据从「标志文件存在」换成「按产物清单逐文件判缺」、重跑安全动作（ln -sf/cp -n/>>）、树/程序/参数/核数改成环境变量；跑前 --dry-run 打印「待跑 N / 跳过 M」。",
+      "notes": "正面场景：重生丢失产物 / 改原驱动。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "第一次拿到这批管式 tif，帮我端到端跑出整套结果（扣减曲线、多区间 Guinier、P(r)、MW、3D、每个节点的 dat）。",
+      "expected_behavior": "走 run-a-tube-saxs-pipeline-end-to-end（首次执行流水线本身，不是重跑+核对）。",
+      "notes": "诱饵类型：同一批数据，但问的是「跑一次」不是「重跑一批」。"
+    }
+  ]
+}
