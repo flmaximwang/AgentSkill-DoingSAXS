@@ -1,0 +1,41 @@
+{
+  "skill": "organize-batch-saxs-dataset",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "线站刚下机，一个目录里平铺着二十几个 series（样品和空白混在一起），帮我按样品拆成「一个样品一个文件夹」。",
+      "expected_behavior": "走 organize-batch-saxs-dataset：按 <名字>_<run4>_<帧5>.<ext> 归并 series，读各自 <series>_00001.txt 的 Description 定身份（不靠文件名前缀猜），先打 dry-run 计划表再落盘（scripts/group-batch-into-sample-folders.py，--apply 才复制，逐文件 sha256 与文件集合核对）。",
+      "notes": "正面场景：本 skill 的教科书式入口。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "这批里 pb7 和 ddh2o 哪个是背景要复制、哪个是样品？877-apo-pb7 算不算背景？",
+      "expected_behavior": "答：背景 = Description 精确等于用户点名的名字（pb7 / ddh2o），不做子串匹配——877-apo-pb7 是「在 pb7 里测的 877-apo 样品」，子串判会把整个样品判成背景。背景系列复制（不是移动）进按 run 号最近的样品文件夹，平局就两个都放。",
+      "notes": "正面场景：身份判别的关键坑。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "归完类报告里有几个背景只进了一个文件夹，是不是我漏放了？",
+      "expected_behavior": "答：两类背景交接处两侧各有一个背景「背离样品」，只进一个文件夹是规则的必然结果，正常值 = 2×(背景种类数−1)+首尾端点，不是 0。报告里把算出来的 run 号距离写出来，用户才不会当漏放。",
+      "notes": "正面场景：落单背景计数通则。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "目标目录里已经有一个叫 bsa 的旧实验文件夹，我这次要建 BSA，会怎么样？",
+      "expected_behavior": "答：macOS APFS / Windows 上 makedirs 不报错、isdir 把大小写不同判成同一目录 → 会静默并进已存在的旧实验。规则：创建前把目标目录条目 casefold() 比较，命中就停下要用户裁决；脚本内建折叠闸（命中返回 3）。",
+      "notes": "正面场景：大小写折叠闸（静默合并）。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "目录已经一个样品一个文件夹、每个文件夹里样品帧和夹着它的 ddh2o 都在了，帮我把这批管式帧端到端跑出整套结果。",
+      "expected_behavior": "走 run-a-tube-saxs-pipeline-end-to-end（归类已完成，这一步是跑流水线：归一化→缩放→扣减→多区间 Guinier→IFT→MW→3D→README）。",
+      "notes": "诱饵类型：同一批数据，但归类已完成，问的是端到端跑流水线。"
+    }
+  ]
+}
