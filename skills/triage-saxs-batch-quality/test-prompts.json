@@ -1,0 +1,41 @@
+{
+  "skill": "triage-saxs-batch-quality",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "should-trigger-01",
+      "type": "should_trigger",
+      "prompt": "这批管式数据跑完了，把信号比较好的样品按从好到差排一下，哪个能用哪个别用。",
+      "expected_behavior": "走 triage-saxs-batch-quality：逐样品读 summary.json / tables/，按固定六条判据排序（原始帧判定 > 上翘 > 单帧 qmax > 对比度 > 帧间起伏 > 拟合侧复核），一行一样品从好到差、每行给数字与理由，末尾写清排除了什么、还剩什么。数字一律回逐样品目录取，不信顶层 README/_summary。",
+      "notes": "正面场景：批次结果排序（本 skill 的主入口）。"
+    },
+    {
+      "id": "should-trigger-02",
+      "type": "should_trigger",
+      "prompt": "一个 30 kDa 的蛋白做静态 SAXS，该上多少浓度？上次那批的浓度还能不能照用？",
+      "expected_behavior": "答：用不变量 c·M 守恒换算（c₂=c₁·M₁/M₂），把推荐值写成 c·M（mg·mL⁻¹·kDa⁻¹）跨蛋白搬运；决定性指标是单帧 SNR≥2 的 q 上界（要覆盖 qRg≈6），本机标定 c·M ≳ 200；上样配方 3–4 档跨 8–10 倍、同一毛细管 buffer→样品→buffer 夹心、对照用样品自己的 buffer。",
+      "notes": "正面场景：浓度换算（用户明确问过）。"
+    },
+    {
+      "id": "should-trigger-03",
+      "type": "should_trigger",
+      "prompt": "排序的时候我该信结果根目录的 README.md 和 _summary/summary.csv，还是各样品目录里的数字？",
+      "expected_behavior": "答：数字一律回逐样品目录取（<样品>/summary.json、tables/）；顶层 README / Rg-MW-table.md / _summary 是生成物，会陈旧或被并发会话搬走。_rawqc/ 是一次性快照、可能不覆盖后加的样品，排序前先数覆盖数、缺的用 scratch 软链接根 + 显式 --out 补跑。",
+      "notes": "正面场景：数据源纪律。"
+    },
+    {
+      "id": "should-trigger-04",
+      "type": "should_trigger",
+      "prompt": "这批里对比度最高的那支是不是信号最好、最该拿去用？",
+      "expected_behavior": "答：不是——对比度是相对低 q 背景电平算的，低 q 过量（聚集/边缘残留）会把它抬高；实测反例：对比度最高（524%）的那支上翘 2.51、无一条 Guinier 区间、MW 970 kDa。判据顺序把上翘/单帧 qmax 排在对比度之前，且两种对比度口径不能混进一张表。",
+      "notes": "正面场景：黑名单里的排序陷阱。"
+    },
+    {
+      "id": "should-not-trigger-01",
+      "type": "should_not_trigger",
+      "prompt": "扣减完低 q 翘起来了，到底是样品聚集，还是光束挡边缘的假信号？",
+      "expected_behavior": "走 assess-saxs-raw-data-quality（原始帧质量归因：空白-空白可复现极限、shape×电平、2D 差分），不是批次取用判断。",
+      "notes": "诱饵类型：同样出现「上翘」，但问的是原始帧归因而非结果取用排序。"
+    }
+  ]
+}
